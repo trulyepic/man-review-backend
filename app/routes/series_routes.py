@@ -2,6 +2,7 @@ from http.client import HTTPException
 from typing import List
 
 from fastapi import APIRouter, UploadFile, File, Depends, Path
+from sqlalchemy import cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import AsyncSessionLocal, get_async_session
@@ -206,3 +207,61 @@ async def get_ranked_series(
 #         series["rank"] = idx + 1 if series["final_score"] > 0 else None
 #
 #     return ranked_series
+
+
+
+@router.get("/series/search", response_model=List[RankedSeriesOut])
+async def search_series(
+    query: str = Query(..., description="Search keyword"),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Series, SeriesDetail).join(
+        SeriesDetail, Series.id == SeriesDetail.series_id, isouter=True
+    ).where(
+        (Series.title.ilike(f"%{query}%")) |
+        (Series.genre.ilike(f"%{query}%")) |
+        (cast(Series.type, String).ilike(f"%{query}%")) |
+        (Series.author.ilike(f"%{query}%")) |
+        (Series.artist.ilike(f"%{query}%"))
+    )
+
+    result = await db.execute(stmt)
+    results = result.all()
+
+    def safe_avg(total, count):
+        return total / count if count else 0
+
+    ranked_series = []
+    for series, detail in results:
+        if detail:
+            story = safe_avg(detail.story_total, detail.story_count)
+            chars = safe_avg(detail.characters_total, detail.characters_count)
+            world = safe_avg(detail.worldbuilding_total, detail.worldbuilding_count)
+            art = safe_avg(detail.art_total, detail.art_count)
+            drama = safe_avg(detail.drama_or_fight_total, detail.drama_or_fight_count)
+            final_score = round((story + chars + world + art + drama) / 5, 2)
+        else:
+            final_score = 0.0
+
+        ranked_series.append({
+            "id": series.id,
+            "title": series.title,
+            "genre": series.genre,
+            "type": series.type,
+            "author": series.author,
+            "artist": series.artist,
+            "cover_url": series.cover_url,
+            "vote_count": series.vote_count or 0,
+            "final_score": final_score,
+        })
+
+    ranked = [s for s in ranked_series if s["final_score"] > 0]
+    unranked = [s for s in ranked_series if s["final_score"] == 0]
+
+    ranked.sort(key=lambda x: x["final_score"], reverse=True)
+    for idx, s in enumerate(ranked):
+        s["rank"] = idx + 1
+    for s in unranked:
+        s["rank"] = None
+
+    return ranked + unranked
