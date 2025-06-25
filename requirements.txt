@@ -1,0 +1,5 @@
+fastapi[all]
+sqlalchemy
+asyncpg
+python-dotenv
+boto3
