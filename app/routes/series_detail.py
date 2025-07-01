@@ -120,23 +120,40 @@ async def vote_series_detail(
     return detail
 
 
+
 @router.get("/{series_id}", response_model=SeriesDetailOut)
 async def get_series_detail(
     series_id: int,
     request: Request,
     session: AsyncSession = Depends(get_async_session),
 ):
-    # Join SeriesDetail with Series to get author and artist
-    result = await session.execute(
-        select(SeriesDetail, Series)
-        .join(Series, Series.id == SeriesDetail.series_id)
-        .where(SeriesDetail.series_id == series_id)
-    )
-    row = result.first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Series detail not found")
+    # Get series first (always exists in this use case)
+    series = await session.get(Series, series_id)
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
 
-    detail, series = row
+    result = await session.execute(
+        select(SeriesDetail).where(SeriesDetail.series_id == series_id)
+    )
+    detail = result.scalars().first()
+
+    # Create default empty detail if not yet created
+    if not detail:
+        detail = SeriesDetail(
+            series_id=series_id,
+            synopsis="",
+            series_cover_url="",  # You can also set a default placeholder image URL here
+            story_total=0,
+            story_count=0,
+            characters_total=0,
+            characters_count=0,
+            worldbuilding_total=0,
+            worldbuilding_count=0,
+            art_total=0,
+            art_count=0,
+            drama_or_fight_total=0,
+            drama_or_fight_count=0,
+        )
 
     # Try to extract user from token
     user = None
@@ -147,7 +164,6 @@ async def get_series_detail(
         except:
             pass
 
-    # Capitalized category keys for frontend consistency
     CATEGORY_LABELS = {
         "Story": "Story",
         "Characters": "Characters",
@@ -156,7 +172,6 @@ async def get_series_detail(
         "Drama / Fighting": "Drama / Fighting",
     }
 
-    # Get the current user's actual votes
     vote_scores = {}
     if user:
         results = await session.execute(
@@ -166,12 +181,10 @@ async def get_series_detail(
             )
         )
         vote_scores = {
-            CATEGORY_LABELS[row[0]]: row[1]
+            CATEGORY_LABELS.get(row[0], row[0]): row[1]
             for row in results.all()
-            if row[0] in CATEGORY_LABELS
         }
 
-    # Get vote counts per category (distinct users)
     vote_counts = {}
     count_results = await session.execute(
         select(UserVote.category, func.count(func.distinct(UserVote.user_id)))
@@ -181,7 +194,6 @@ async def get_series_detail(
     for cat, count in count_results:
         vote_counts[CATEGORY_LABELS.get(cat, cat)] = count
 
-    # Prepare response with extra author/artist fields
     response_data = jsonable_encoder(detail)
     response_data["vote_scores"] = vote_scores
     response_data["vote_counts"] = vote_counts
@@ -197,11 +209,17 @@ async def get_series_detail(
 #     request: Request,
 #     session: AsyncSession = Depends(get_async_session),
 # ):
-#     detail = await session.scalar(
-#         select(SeriesDetail).where(SeriesDetail.series_id == series_id)
+#     # Join SeriesDetail with Series to get author and artist
+#     result = await session.execute(
+#         select(SeriesDetail, Series)
+#         .join(Series, Series.id == SeriesDetail.series_id)
+#         .where(SeriesDetail.series_id == series_id)
 #     )
-#     if not detail:
+#     row = result.first()
+#     if not row:
 #         raise HTTPException(status_code=404, detail="Series detail not found")
+#
+#     detail, series = row
 #
 #     # Try to extract user from token
 #     user = None
@@ -236,7 +254,7 @@ async def get_series_detail(
 #             if row[0] in CATEGORY_LABELS
 #         }
 #
-#         # 📊 Get vote counts by category (distinct users)
+#     # Get vote counts per category (distinct users)
 #     vote_counts = {}
 #     count_results = await session.execute(
 #         select(UserVote.category, func.count(func.distinct(UserVote.user_id)))
@@ -246,8 +264,14 @@ async def get_series_detail(
 #     for cat, count in count_results:
 #         vote_counts[CATEGORY_LABELS.get(cat, cat)] = count
 #
+#     # Prepare response with extra author/artist fields
 #     response_data = jsonable_encoder(detail)
 #     response_data["vote_scores"] = vote_scores
 #     response_data["vote_counts"] = vote_counts
+#     response_data["author"] = series.author
+#     response_data["artist"] = series.artist
+#
 #     return JSONResponse(content=response_data)
+
+
 
