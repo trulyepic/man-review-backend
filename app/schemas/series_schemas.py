@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from enum import Enum
 from fastapi import Form
 from typing import Optional, Union
+from decimal import Decimal
 
 class SeriesTypeEnum(str, Enum):
     MANGA = "MANGA"
@@ -46,7 +47,7 @@ class SeriesOut(SeriesCreate):
     }
 
 class RankedSeriesOut(SeriesOut):
-    final_score: float
+    final_score: Decimal
     rank: Optional[int]  # Can be null for unranked
 
     model_config = {

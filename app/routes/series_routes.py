@@ -1,3 +1,4 @@
+from decimal import Decimal
 from http.client import HTTPException
 from typing import List
 
@@ -123,7 +124,9 @@ async def get_ranked_series(
             world = safe_avg(detail.worldbuilding_total, detail.worldbuilding_count)
             art = safe_avg(detail.art_total, detail.art_count)
             drama = safe_avg(detail.drama_or_fight_total, detail.drama_or_fight_count)
-            final_score = round((story + chars + world + art + drama) / 5, 2)
+            # final_score = round((story + chars + world + art + drama) / 5, 2)
+            final_score = Decimal((story + chars + world + art + drama) / 5)
+            # print(f"final_socre: {final_score}")
         else:
             final_score = 0.0
 
@@ -239,7 +242,9 @@ async def search_series(
             world = safe_avg(detail.worldbuilding_total, detail.worldbuilding_count)
             art = safe_avg(detail.art_total, detail.art_count)
             drama = safe_avg(detail.drama_or_fight_total, detail.drama_or_fight_count)
-            final_score = round((story + chars + world + art + drama) / 5, 2)
+            # final_score = round((story + chars + world + art + drama) / 5, 2)
+            final_score = Decimal((story + chars + world + art + drama) / 5)
+
         else:
             final_score = 0.0
 
