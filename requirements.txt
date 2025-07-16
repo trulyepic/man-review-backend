@@ -10,3 +10,7 @@ python-jose[cryptography]~=3.5.0
 pydantic~=2.11.7
 itsdangerous~=2.2.0
 sendgrid~=6.12.4
+
+# Google OAuth dependencies
+google-auth~=2.29.0
+google-auth-oauthlib~=1.2.0
