@@ -9,6 +9,9 @@ from passlib.hash import bcrypt
 from fastapi.responses import JSONResponse
 from app.utils.token_utils import create_access_token
 from app.utils.email_token_utils import verify_email_token, generate_email_token
+from google.oauth2 import id_token
+from google.auth.transport import requests
+import os
 
 router = APIRouter()
 
@@ -83,6 +86,49 @@ async def signup(user: UserCreate, db: AsyncSession = Depends(get_db)):
 #         message="User created successfully. Please verify your email.",
 #         token=token
 #     )
+
+
+@router.post("/google-oauth")
+async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
+    token = payload.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing token")
+
+    try:
+        id_info = id_token.verify_oauth2_token(token, requests.Request(), os.getenv("GOOGLE_CLIENT_ID"))
+
+        email = id_info["email"]
+        username = id_info.get("name", email.split("@")[0])  # fallback
+
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+
+        if not user:
+            user = User(
+                email=email,
+                username=username,
+                password="",
+                is_verified=True,
+                role="GENERAL"
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+        access_token = create_access_token(user)
+
+        return {
+            "access_token": access_token,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "role": user.role,
+            },
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
 
 
 @router.post("/login")
