@@ -132,7 +132,11 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login")
-async def login(user: UserLogin, db: AsyncSession = Depends(get_db)):  # 👈 use it
+async def login(user: UserLogin, db: AsyncSession = Depends(get_db)):
+    # 🚨 Add this check to prevent empty input
+    if not user.username.strip() or not user.password.strip():
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
     result = await db.execute(select(User).where(User.username == user.username))
     db_user = result.scalar_one_or_none()
 
@@ -152,6 +156,7 @@ async def login(user: UserLogin, db: AsyncSession = Depends(get_db)):  # 👈 us
             "role": db_user.role
         }
     })
+
 
 # @router.post("/login")
 # async def login(user: UserCreate, db: AsyncSession = Depends(get_db)):
