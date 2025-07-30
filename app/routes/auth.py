@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import (APIRouter, Depends, HTTPException,
+                     status, Query, Body)
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.email_service import send_verification_email
+from app.main import limiter
 from app.models.user_model import User
 from app.schemas.user_schemas import UserCreate, UserOut, SignupResponse, UserLogin
 from sqlalchemy.future import select
 from passlib.hash import bcrypt
 from fastapi.responses import JSONResponse
+
+from app.utils.captcha import verify_captcha
 from app.utils.token_utils import create_access_token
 from app.utils.email_token_utils import verify_email_token, generate_email_token
 from google.oauth2 import id_token
@@ -21,7 +25,10 @@ async def get_db():
 
 
 @router.post("/signup", response_model=SignupResponse)
-async def signup(user: UserCreate, db: AsyncSession = Depends(get_db)):
+async def signup(user: UserCreate,
+                    captcha_token: str = Body(...),
+                 db: AsyncSession = Depends(get_db)):
+    await verify_captcha(captcha_token)
     result = await db.execute(select(User).where(User.username == user.username))
     existing_user = result.scalar_one_or_none()
 
@@ -130,9 +137,12 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
 
-
+@limiter.limit("5/minute")
 @router.post("/login")
-async def login(user: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login(user: UserLogin, captcha_token: str = Body(...),
+    db: AsyncSession = Depends(get_db)):
+
+    await verify_captcha(captcha_token)
     # 🚨 Add this check to prevent empty input
     if not user.username.strip() or not user.password.strip():
         raise HTTPException(status_code=400, detail="Username and password are required")
