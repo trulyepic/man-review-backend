@@ -3,7 +3,7 @@ from fastapi import (APIRouter, Depends, HTTPException,
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.email_service import send_verification_email
-from app.main import limiter
+from app.limiter import limiter
 from app.models.user_model import User
 from app.schemas.user_schemas import UserCreate, UserOut, SignupResponse, UserLogin
 from sqlalchemy.future import select

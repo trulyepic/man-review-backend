@@ -5,19 +5,16 @@ from app.routes import series_routes, auth, series_detail
 from app.database import Base, engine
 
 # 🔒 Rate limiting setup
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+
+from app.limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 app = FastAPI(title="Toon Ranks API")
 
-# ⏳ Create Limiter
-limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
-# ❗ Optional: Global handler for rate limit errors
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
