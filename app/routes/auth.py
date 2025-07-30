@@ -29,9 +29,8 @@ async def get_db():
 @router.post("/signup", response_model=SignupResponse)
 @limiter.limit("5/minute")
 async def signup(request: Request, user: UserCreate,
-                    captcha_token: str = Body(...),
                  db: AsyncSession = Depends(get_db)):
-    await verify_captcha(captcha_token)
+    await verify_captcha(user.captcha_token)
     result = await db.execute(select(User).where(User.username == user.username))
     existing_user = result.scalar_one_or_none()
 
@@ -143,10 +142,10 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login")
 @limiter.limit("5/minute")
-async def login(request: Request, user: UserLogin, captcha_token: str = Body(...),
+async def login(request: Request, user: UserLogin,
     db: AsyncSession = Depends(get_db)):
 
-    await verify_captcha(captcha_token)
+    await verify_captcha(user.captcha_token)
     # 🚨 Add this check to prevent empty input
     if not user.username.strip() or not user.password.strip():
         raise HTTPException(status_code=400, detail="Username and password are required")
