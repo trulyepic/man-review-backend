@@ -14,3 +14,5 @@ sendgrid~=6.12.4
 # Google OAuth dependencies
 google-auth~=2.29.0
 google-auth-oauthlib~=1.2.0
+
+slowapi~=23.2.1
