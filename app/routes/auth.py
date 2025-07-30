@@ -9,6 +9,7 @@ from app.schemas.user_schemas import UserCreate, UserOut, SignupResponse, UserLo
 from sqlalchemy.future import select
 from passlib.hash import bcrypt
 from fastapi.responses import JSONResponse
+from fastapi import Request
 
 from app.utils.captcha import verify_captcha
 from app.utils.token_utils import create_access_token
@@ -26,7 +27,7 @@ async def get_db():
 
 @limiter.limit("5/minute")
 @router.post("/signup", response_model=SignupResponse)
-async def signup(user: UserCreate,
+async def signup(_request: Request, user: UserCreate,
                     captcha_token: str = Body(...),
                  db: AsyncSession = Depends(get_db)):
     await verify_captcha(captcha_token)
@@ -140,7 +141,7 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
 
 @limiter.limit("5/minute")
 @router.post("/login")
-async def login(user: UserLogin, captcha_token: str = Body(...),
+async def login(_request: Request, user: UserLogin, captcha_token: str = Body(...),
     db: AsyncSession = Depends(get_db)):
 
     await verify_captcha(captcha_token)
