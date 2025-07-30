@@ -25,8 +25,9 @@ async def get_db():
         yield session
 
 
-@limiter.limit("5/minute")
+
 @router.post("/signup", response_model=SignupResponse)
+@limiter.limit("5/minute")
 async def signup(_request: Request, user: UserCreate,
                     captcha_token: str = Body(...),
                  db: AsyncSession = Depends(get_db)):
@@ -139,8 +140,9 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid Google token")
 
 
-@limiter.limit("5/minute")
+
 @router.post("/login")
+@limiter.limit("5/minute")
 async def login(_request: Request, user: UserLogin, captcha_token: str = Body(...),
     db: AsyncSession = Depends(get_db)):
 
