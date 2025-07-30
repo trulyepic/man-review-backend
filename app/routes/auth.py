@@ -24,6 +24,7 @@ async def get_db():
         yield session
 
 
+@limiter.limit("5/minute")
 @router.post("/signup", response_model=SignupResponse)
 async def signup(user: UserCreate,
                     captcha_token: str = Body(...),
