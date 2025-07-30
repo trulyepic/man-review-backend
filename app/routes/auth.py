@@ -28,7 +28,7 @@ async def get_db():
 
 @router.post("/signup", response_model=SignupResponse)
 @limiter.limit("5/minute")
-async def signup(_request: Request, user: UserCreate,
+async def signup(request: Request, user: UserCreate,
                     captcha_token: str = Body(...),
                  db: AsyncSession = Depends(get_db)):
     await verify_captcha(captcha_token)
@@ -143,7 +143,7 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login")
 @limiter.limit("5/minute")
-async def login(_request: Request, user: UserLogin, captcha_token: str = Body(...),
+async def login(request: Request, user: UserLogin, captcha_token: str = Body(...),
     db: AsyncSession = Depends(get_db)):
 
     await verify_captcha(captcha_token)
