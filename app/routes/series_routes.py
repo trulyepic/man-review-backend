@@ -2,6 +2,10 @@ from decimal import Decimal
 from http.client import HTTPException
 from typing import List
 
+from decimal import Decimal
+from typing import Optional
+from sqlalchemy import select
+
 from fastapi import APIRouter, UploadFile, File, Depends, Path
 from sqlalchemy import cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +16,7 @@ from app.models.series_model import Series
 from app.schemas.series_schemas import SeriesCreate, SeriesOut, SeriesUpdate, RankedSeriesOut
 from app.s3 import upload_to_s3, delete_from_s3
 from urllib.parse import urlparse
-from fastapi import Query
+from fastapi import Query, HTTPException
 
 
 
@@ -211,7 +215,61 @@ async def get_ranked_series(
 #
 #     return ranked_series
 
+@router.get("/series/summary/{series_id}", response_model=RankedSeriesOut)
+async def get_series_summary(
+    series_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    # join Series + SeriesDetail (same as /series/rankings)
+    stmt = select(Series, SeriesDetail).join(
+        SeriesDetail, Series.id == SeriesDetail.series_id, isouter=True
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
 
+    def safe_avg(total, count):
+        return total / count if count else 0
+
+    # build the same list as /series/rankings
+    ranked_series = []
+    for s, d in rows:
+        if d:
+            story = safe_avg(d.story_total, d.story_count)
+            chars = safe_avg(d.characters_total, d.characters_count)
+            world = safe_avg(d.worldbuilding_total, d.worldbuilding_count)
+            art = safe_avg(d.art_total, d.art_count)
+            drama = safe_avg(d.drama_or_fight_total, d.drama_or_fight_count)
+            final_score = Decimal((story + chars + world + art + drama) / 5)
+        else:
+            final_score = 0.0
+
+        ranked_series.append({
+            "id": s.id,
+            "title": s.title,
+            "genre": s.genre,
+            "type": s.type,
+            "author": s.author,
+            "artist": s.artist,
+            "cover_url": s.cover_url,
+            "vote_count": s.vote_count or 0,
+            "final_score": final_score,
+        })
+
+    ranked = [x for x in ranked_series if x["final_score"] > 0]
+    unranked = [x for x in ranked_series if x["final_score"] == 0]
+
+    ranked.sort(key=lambda x: x["final_score"], reverse=True)
+    for idx, x in enumerate(ranked):
+        x["rank"] = idx + 1
+    for x in unranked:
+        x["rank"] = None
+
+    combined = ranked + unranked
+    item = next((x for x in combined if x["id"] == series_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    return item
 
 @router.get("/series/search", response_model=List[RankedSeriesOut])
 async def search_series(
