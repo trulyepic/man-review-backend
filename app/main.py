@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from app.routes import series_routes, auth, series_detail
+from sqlalchemy import text
+
+from app.routes import series_routes, auth, series_detail, reading_list_routes
 from app.database import Base, engine
 
 app = FastAPI(title="Toon Ranks API")
@@ -29,9 +31,12 @@ app.add_middleware(
 app.include_router(series_routes.router)
 app.include_router(auth.router, prefix="/auth")
 app.include_router(series_detail.router)
+app.include_router(reading_list_routes.router)
 
 # ✅ Run DB init on startup
 @app.on_event("startup")
 async def on_startup():
     async with engine.begin() as conn:
+        # Ensure schema exists
+        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "man_review";'))
         await conn.run_sync(Base.metadata.create_all)
