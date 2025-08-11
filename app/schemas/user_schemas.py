@@ -6,6 +6,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
     email: EmailStr
+    captcha_token: str
 
     # @field_validator("email")
     @classmethod
@@ -26,5 +27,6 @@ class SignupResponse(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
+    captcha_token: str
 
 
