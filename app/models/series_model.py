@@ -9,6 +9,12 @@ class SeriesType(enum.Enum):
     MANHWA = "MANHWA"
     MANHUA = "MANHUA"
 
+class SeriesStatus(enum.Enum):
+    ONGOING = "ONGOING"
+    COMPLETE = "COMPLETE"
+    HIATUS = "HIATUS"
+    UNKNOWN = "UNKNOWN"
+
 class Series(Base):
     __tablename__ = 'series'
     __table_args__ = {"schema": "man_review"}
@@ -21,6 +27,16 @@ class Series(Base):
     type = Column(SqlEnum(SeriesType), nullable=False)
     author = Column(String)
     artist = Column(String)
+
+    status = Column(
+        SqlEnum(
+            SeriesStatus,
+            name="series_status",
+            schema="man_review",
+            create_type=False,  # don't try to create; we already created via SQL
+        ),
+        nullable=True,
+    )
 
     # Relationship to SeriesDetail
     detail = relationship(

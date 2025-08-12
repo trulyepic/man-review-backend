@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import AsyncSessionLocal, get_async_session
 from app.models.series_detail import SeriesDetail
-from app.models.series_model import Series
+from app.models.series_model import Series, SeriesType, SeriesStatus
 from app.schemas.series_schemas import SeriesCreate, SeriesOut, SeriesUpdate, RankedSeriesOut
 from app.s3 import upload_to_s3, delete_from_s3
 from urllib.parse import urlparse
@@ -63,7 +63,8 @@ async def create_series(
         type=series.type.name,  # Convert Enum to string
         cover_url=image_url,
         author=series.author,
-        artist=series.artist
+        artist=series.artist,
+        status=SeriesStatus(series.status.value) if series.status else None,
     )
 
     db.add(new_series)
@@ -84,14 +85,28 @@ async def update_series(
     series_data: SeriesUpdate,
     session: AsyncSession = Depends(get_async_session)
 ):
+    # 1) Load row
     result = await session.execute(select(Series).where(Series.id == series_id))
     series = result.scalars().first()
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
 
-    for field, value in series_data.dict(exclude_unset=True).items():
+    # 2) Build payload and convert strings -> Python Enums
+    payload = series_data.dict(exclude_unset=True)
+
+    if "type" in payload and payload["type"] is not None:
+        # payload["type"] is like "MANGA" | "MANHWA" | "MANHUA"
+        payload["type"] = SeriesType[payload["type"]]
+
+    if "status" in payload and payload["status"] is not None:
+        # payload["status"] is like "ONGOING" | "COMPLETE" | "HIATUS" | "UNKNOWN"
+        payload["status"] = SeriesStatus[payload["status"]]
+
+    # 3) Apply updates
+    for field, value in payload.items():
         setattr(series, field, value)
 
+    # 4) Save
     await session.commit()
     await session.refresh(series)
     return series
@@ -144,6 +159,7 @@ async def get_ranked_series(
             "cover_url": series.cover_url,
             "vote_count": series.vote_count or 0,
             "final_score": final_score,
+            "status": series.status.name if series.status else None,
         })
 
     # Split and sort
@@ -253,6 +269,7 @@ async def get_series_summary(
             "cover_url": s.cover_url,
             "vote_count": s.vote_count or 0,
             "final_score": final_score,
+            "status": s.status.name if s.status else None,
         })
 
     ranked = [x for x in ranked_series if x["final_score"] > 0]
@@ -316,6 +333,7 @@ async def search_series(
             "cover_url": series.cover_url,
             "vote_count": series.vote_count or 0,
             "final_score": final_score,
+            "status": series.status.name if series.status else None,
         })
 
     ranked = [s for s in ranked_series if s["final_score"] > 0]

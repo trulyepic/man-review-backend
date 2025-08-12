@@ -10,12 +10,19 @@ class SeriesTypeEnum(str, Enum):
     MANHWA = "MANHWA"
     MANHUA = "MANHUA"
 
+class SeriesStatusEnum(str, Enum):
+    ONGOING = "ONGOING"
+    COMPLETE = "COMPLETE"
+    HIATUS = "HIATUS"
+    UNKNOWN = "UNKNOWN"
+
 class SeriesCreate(BaseModel):
     title: str
     genre: str
     type: SeriesTypeEnum
     author: Optional[str] = ""
     artist: Optional[str] = ""
+    status: Optional[SeriesStatusEnum] = None
 
     @classmethod
     def as_form(
@@ -24,10 +31,11 @@ class SeriesCreate(BaseModel):
             genre: str = Form(...),
             type: SeriesTypeEnum = Form(...),
             author: str = Form(""),
-            artist: str = Form("")
+            artist: str = Form(""),
+            status: Optional[SeriesStatusEnum] = Form(None)
 
     ) -> "SeriesCreate":
-        return cls(title=title, genre=genre, type=type, author=author, artist=artist)
+        return cls(title=title, genre=genre, type=type, author=author, artist=artist, status=status)
 
 
 class SeriesUpdate(BaseModel):
@@ -36,6 +44,7 @@ class SeriesUpdate(BaseModel):
     type: Optional[SeriesTypeEnum] = None
     author: Optional[str] = None
     artist: Optional[str] = None
+    status: Optional[SeriesStatusEnum] = None
 
 class SeriesOut(SeriesCreate):
     id: int
