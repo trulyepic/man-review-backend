@@ -300,7 +300,8 @@ async def search_series(
         (Series.genre.ilike(f"%{query}%")) |
         (cast(Series.type, String).ilike(f"%{query}%")) |
         (Series.author.ilike(f"%{query}%")) |
-        (Series.artist.ilike(f"%{query}%"))
+        (Series.artist.ilike(f"%{query}%")) |
+        (cast(Series.status, String).ilike(f"%{query}%"))
     )
 
     result = await db.execute(stmt)
