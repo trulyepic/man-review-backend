@@ -17,6 +17,7 @@ from app.utils.email_token_utils import verify_email_token, generate_email_token
 from google.oauth2 import id_token
 from google.auth.transport import requests
 import os
+from jose import JWTError
 
 router = APIRouter()
 
@@ -142,11 +143,17 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login")
 @limiter.limit("5/minute")
-async def login(request: Request, user: UserLogin,
-    db: AsyncSession = Depends(get_db)):
+async def login(request: Request, user: UserLogin, db: AsyncSession = Depends(get_db)):
+    try:
+        await verify_captcha(user.captcha_token)
+    except HTTPException as he:
+        # Keep this: shows exact captcha failure reason from verify_captcha
+        print(f"[LOGIN] Captcha verification failed -> {he.detail}")
+        raise
+    except Exception as e:
+        print(f"[LOGIN] Unexpected captcha error -> {e}")
+        raise HTTPException(status_code=500, detail=f"CAPTCHA verification error: {e}")
 
-    await verify_captcha(user.captcha_token)
-    # 🚨 Add this check to prevent empty input
     if not user.username.strip() or not user.password.strip():
         raise HTTPException(status_code=400, detail="Username and password are required")
 
@@ -159,16 +166,17 @@ async def login(request: Request, user: UserLogin,
     if not db_user.is_verified:
         raise HTTPException(status_code=403, detail="Email not verified")
 
-    access_token = create_access_token(db_user)
+    try:
+        access_token = create_access_token(db_user)
+    except Exception as e:
+        print(f"[LOGIN] Token creation failed -> {e}")
+        raise HTTPException(status_code=500, detail=f"Token creation failed: {e}")
 
     return JSONResponse({
         "access_token": access_token,
-        "user": {
-            "id": db_user.id,
-            "username": db_user.username,
-            "role": db_user.role
-        }
+        "user": {"id": db_user.id, "username": db_user.username, "role": db_user.role}
     })
+
 
 
 # @router.post("/login")

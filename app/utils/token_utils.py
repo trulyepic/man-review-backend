@@ -12,7 +12,8 @@ from app.models.user_model import User
 load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+# ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 480 # 8 hours
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
@@ -23,16 +24,38 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 #     to_encode.update({"exp": expire})
 #     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 #     return encoded_jwt
-def create_access_token(user: User):
+# def create_access_token(user: User):
+#     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+#     to_encode = {
+#         "id": user.id,          # ✅ this is what your get_current_user expects
+#         "sub": user.username,   # Optional, helps for auditing/logs
+#         "role": user.role,      # Optional, if you use role-based access
+#         "exp": expire
+#     }
+#     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+#     return encoded_jwt
+
+def _get_secret_key() -> str:
+    secret = os.getenv("SECRET_KEY")
+    if not secret:
+        # Fail fast with a clear message instead of a generic 500
+        raise RuntimeError("SECRET_KEY is not configured in the backend environment")
+    if len(secret) < 32:
+        raise RuntimeError("SECRET_KEY is too short; use at least 32 characters")
+    return secret
+
+def create_access_token(user: User) -> str:
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {
-        "id": user.id,          # ✅ this is what your get_current_user expects
-        "sub": user.username,   # Optional, helps for auditing/logs
-        "role": user.role,      # Optional, if you use role-based access
-        "exp": expire
+        "id": user.id,         # what get_current_user expects
+        "sub": user.username,  # helpful for auditing/logs
+        "role": user.role,     # if you use role-based access
+        "exp": expire,
     }
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    try:
+        return jwt.encode(to_encode, _get_secret_key(), algorithm=ALGORITHM)
+    except Exception as e:
+        raise RuntimeError(f"JWT encode failed: {e}")
 
 
 
