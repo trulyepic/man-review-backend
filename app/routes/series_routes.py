@@ -79,7 +79,7 @@ async def list_series(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
-@router.put("/{series_id}", response_model=SeriesOut)
+@router.put("/series/{series_id}", response_model=SeriesOut)
 async def update_series(
     series_id: int,
     series_data: SeriesUpdate,
