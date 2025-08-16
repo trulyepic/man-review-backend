@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy import text
 
-from app.routes import series_routes, auth, series_detail, reading_list_routes
+from app.routes import series_routes, auth, series_detail, reading_list_routes, issues_routes
 
 from fastapi.responses import RedirectResponse, JSONResponse
 from app.routes import series_routes, auth, series_detail
@@ -53,6 +53,7 @@ app.include_router(series_routes.router)
 app.include_router(auth.router, prefix="/auth")
 app.include_router(series_detail.router)
 app.include_router(reading_list_routes.router)
+app.include_router(issues_routes.router)
 
 # ✅ Run DB init on startup
 @app.on_event("startup")
