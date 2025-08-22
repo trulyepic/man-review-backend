@@ -14,7 +14,7 @@ class IssueOut(BaseModel):
     title: str
     description: str
     page_url: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     screenshot_url: Optional[str] = None
     user_id: Optional[int] = None
     user_agent: Optional[str] = None

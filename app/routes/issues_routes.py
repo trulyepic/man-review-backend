@@ -2,6 +2,8 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request, Query, status
 from typing import Optional, List
+
+from pydantic import EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, or_
 
@@ -53,7 +55,7 @@ async def report_issue(
     title: str = Form(..., max_length=200),
     description: str = Form(...),
     page_url: Optional[str] = Form(None),
-    email: Optional[str] = Form(None),
+    email: Optional[EmailStr] = Form(None),
     screenshot: Optional[UploadFile] = File(None),
 ):
     # Validate enum
@@ -76,7 +78,7 @@ async def report_issue(
         title=title.strip(),
         description=description.strip(),
         page_url=(page_url or "").strip() or None,
-        email=(email or "").strip() or None,
+        email=str(email) if email else None,
         screenshot_url=screenshot_url,
         user_id=None,  # always anonymous
         user_agent=user_agent[:512] if user_agent else None,
