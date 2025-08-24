@@ -27,6 +27,24 @@ except Exception:
 
 router = APIRouter(prefix="/reading-lists", tags=["reading-lists"])
 MAX_LISTS_PER_USER = 2
+MAX_ITEMS_PER_LIST_NON_ADMIN = 35
+
+
+def is_admin_user(user: User) -> bool:
+    """
+    Your app uses Admin and General roles.
+    Support either a single 'role' field or a roles collection if your model has it.
+    """
+    role = getattr(user, "role", None)
+    roles = getattr(user, "roles", None)
+    if isinstance(role, str) and role.upper() in {"ADMIN", "ROLE_ADMIN"}:
+        return True
+    if isinstance(roles, (list, set, tuple)):
+        # roles may be dicts/objs/strings depending on your model; normalize to strings if needed
+        normalized = {str(r).upper() for r in roles}
+        if "ADMIN" in normalized or "ROLE_ADMIN" in normalized:
+            return True
+    return False
 
 
 async def get_current_user(
@@ -116,6 +134,52 @@ async def create_reading_list(
     return full
 
 
+# @router.post("/{list_id}/items", response_model=ReadingListOut)
+# async def add_series_to_list(
+#     list_id: int,
+#     payload: AddSeriesRequest,
+#     session: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ):
+#     # Verify list ownership
+#     list_stmt = (
+#         select(ReadingList)
+#         .where(ReadingList.id == list_id, ReadingList.user_id == current_user.id)
+#         .options(selectinload(ReadingList.items))
+#     )
+#     rlist = (await session.execute(list_stmt)).scalars().first()
+#     if not rlist:
+#         raise HTTPException(status_code=404, detail="List not found.")
+#
+#     # Optional: verify series exists for cleaner error
+#     series_exists = (
+#         await session.execute(select(func.count(Series.id)).where(Series.id == payload.series_id))
+#     ).scalar_one()
+#     if not series_exists:
+#         raise HTTPException(status_code=404, detail="Series not found.")
+#
+#     # Idempotent add
+#     exists_stmt = select(ReadingListItem).where(
+#         ReadingListItem.list_id == list_id, ReadingListItem.series_id == payload.series_id
+#     )
+#     existing = (await session.execute(exists_stmt)).scalars().first()
+#     if existing:
+#         return rlist
+#
+#     session.add(ReadingListItem(list_id=list_id, series_id=payload.series_id))
+#     await session.commit()
+#
+#     # Return updated list with items
+#     rlist = (
+#         await session.execute(
+#             select(ReadingList)
+#             .where(ReadingList.id == list_id)
+#             .options(selectinload(ReadingList.items))
+#         )
+#     ).scalars().first()
+#     return rlist
+
+
 @router.post("/{list_id}/items", response_model=ReadingListOut)
 async def add_series_to_list(
     list_id: int,
@@ -123,7 +187,7 @@ async def add_series_to_list(
     session: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Verify list ownership
+    # Verify list ownership + eager-load items for the response
     list_stmt = (
         select(ReadingList)
         .where(ReadingList.id == list_id, ReadingList.user_id == current_user.id)
@@ -140,7 +204,7 @@ async def add_series_to_list(
     if not series_exists:
         raise HTTPException(status_code=404, detail="Series not found.")
 
-    # Idempotent add
+    # Idempotent add: if already present, just return the list
     exists_stmt = select(ReadingListItem).where(
         ReadingListItem.list_id == list_id, ReadingListItem.series_id == payload.series_id
     )
@@ -148,6 +212,20 @@ async def add_series_to_list(
     if existing:
         return rlist
 
+    # Enforce per-list item cap for non-admins
+    if not is_admin_user(current_user):
+        current_count = (
+            await session.execute(
+                select(func.count(ReadingListItem.id)).where(ReadingListItem.list_id == list_id)
+            )
+        ).scalar_one()
+        if current_count >= MAX_ITEMS_PER_LIST_NON_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"List is full. Non premium users can only have up to {MAX_ITEMS_PER_LIST_NON_ADMIN} items per list.",
+            )
+
+    # Proceed to add
     session.add(ReadingListItem(list_id=list_id, series_id=payload.series_id))
     await session.commit()
 
@@ -160,6 +238,7 @@ async def add_series_to_list(
         )
     ).scalars().first()
     return rlist
+
 
 
 @router.delete("/{list_id}/items/{series_id}", response_model=ReadingListOut)
