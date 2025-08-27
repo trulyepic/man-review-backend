@@ -17,6 +17,7 @@ from app.database import Base, engine
 from app.limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from app.routes import sitemap
 
 app = FastAPI(title="Toon Ranks API")
 
@@ -56,6 +57,7 @@ app.include_router(series_detail.router)
 app.include_router(reading_list_routes.router)
 app.include_router(issues_routes.router)
 app.include_router(forum_routes.router)
+app.include_router(sitemap.router)
 
 # ✅ Run DB init on startup
 @app.on_event("startup")
