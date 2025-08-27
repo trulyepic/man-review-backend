@@ -35,6 +35,12 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 @app.middleware("http")
 async def redirect_www(request: Request, call_next):
     host = request.headers.get("host", "")
+    path = request.url.path
+
+    # Do NOT redirect sitemap endpoints (let Amplify proxy succeed)
+    if path.startswith("/sitemap") or path.startswith("/sitemaps/"):
+        return await call_next(request)
+
     if host.startswith("www."):
         # Remove www. and redirect
         new_url = request.url.replace(netloc=host.replace("www.", ""))
