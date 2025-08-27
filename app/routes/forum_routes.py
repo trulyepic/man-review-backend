@@ -10,7 +10,7 @@ from app.models.series_model import Series
 from app.models.user_model import User
 
 from app.schemas.forum_schemas import (
-    ForumThreadOut, ForumPostOut, CreateThreadIn, CreatePostIn, SeriesRefOut,
+    ForumThreadOut, ForumPostOut, CreateThreadIn, CreatePostIn, SeriesRefOut, ThreadSettingsIn,
 )
 
 # ✅ Use your existing token utils (no changes there)
@@ -124,6 +124,7 @@ async def _thread_to_out(t: ForumThread, db: AsyncSession) -> ForumThreadOut:
         last_post_at=str(t.last_post_at),
         series_refs=srefs,
         locked=bool(getattr(t, "locked", False)),
+        latest_first=bool(getattr(t, "latest_first", False)),
     )
 
 async def _post_to_out(p: ForumPost, db: AsyncSession) -> ForumPostOut:
@@ -231,6 +232,57 @@ request: Request,
 
     return await _thread_to_out(thread, db)
 
+# @router.get("/threads/{thread_id}")
+# async def get_thread(
+#     thread_id: int,
+#     db: AsyncSession = Depends(get_async_session),
+#     _viewer: Optional[User] = Depends(get_current_user_optional),  # optional
+# ):
+#     t = await db.get(ForumThread, thread_id)
+#     if not t:
+#         raise HTTPException(status_code=404, detail="Thread not found")
+#
+#     header_refs = await db.execute(
+#         select(ForumSeriesRef, Series)
+#         .join(Series, Series.id == ForumSeriesRef.series_id)
+#         .where(ForumSeriesRef.thread_id == thread_id, ForumSeriesRef.post_id == None)
+#     )
+#     header = [
+#         {
+#             "series_id": s.id,
+#             "title": s.title,
+#             "cover_url": s.cover_url,
+#             "type": s.type,
+#             "status": s.status,
+#         }
+#         for (_ref, s) in header_refs.all()
+#     ]
+#
+#     posts = (
+#         await db.execute(
+#             select(ForumPost)
+#             .where(ForumPost.thread_id == thread_id)
+#             .order_by(ForumPost.created_at.asc())
+#         )
+#     ).scalars().all()
+#
+#     posts_out = [await _post_to_plain_dict(p, db) for p in posts]
+#
+#     return {
+#         "thread": {
+#             "id": t.id,
+#             "title": t.title,
+#             "author_username": None,
+#             "created_at": str(t.created_at),
+#             "updated_at": str(t.updated_at),
+#             "post_count": t.post_count or 0,
+#             "last_post_at": str(t.last_post_at),
+#             "series_refs": header,
+#             "locked": bool(getattr(t, "locked", False)),
+#         },
+#         "posts": posts_out,
+#     }
+
 @router.get("/threads/{thread_id}")
 async def get_thread(
     thread_id: int,
@@ -241,22 +293,7 @@ async def get_thread(
     if not t:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    header_refs = await db.execute(
-        select(ForumSeriesRef, Series)
-        .join(Series, Series.id == ForumSeriesRef.series_id)
-        .where(ForumSeriesRef.thread_id == thread_id, ForumSeriesRef.post_id == None)
-    )
-    header = [
-        {
-            "series_id": s.id,
-            "title": s.title,
-            "cover_url": s.cover_url,
-            "type": s.type,
-            "status": s.status,
-        }
-        for (_ref, s) in header_refs.all()
-    ]
-
+    # Posts (unchanged)
     posts = (
         await db.execute(
             select(ForumPost)
@@ -264,21 +301,14 @@ async def get_thread(
             .order_by(ForumPost.created_at.asc())
         )
     ).scalars().all()
-
     posts_out = [await _post_to_plain_dict(p, db) for p in posts]
 
+    # ✅ Reuse the shared mapper so locked + latest_first + series_refs are all included
+    thread_out = await _thread_to_out(t, db)
+
+    # If you want to be explicit, dump the Pydantic model into a dict
     return {
-        "thread": {
-            "id": t.id,
-            "title": t.title,
-            "author_username": None,
-            "created_at": str(t.created_at),
-            "updated_at": str(t.updated_at),
-            "post_count": t.post_count or 0,
-            "last_post_at": str(t.last_post_at),
-            "series_refs": header,
-            "locked": bool(getattr(t, "locked", False)),
-        },
+        "thread": dump_model(thread_out),
         "posts": posts_out,
     }
 
@@ -496,4 +526,24 @@ async def delete_my_post(
 
     await db.commit()
     return Response(status_code=204)
+
+@router.patch("/threads/{thread_id}/settings", response_model=dict)
+async def update_thread_settings(
+    thread_id: int,
+    body: ThreadSettingsIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    t = await db.get(ForumThread, thread_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    if body.latest_first is not None:
+        t.latest_first = bool(body.latest_first)
+
+    await db.commit()
+    await db.refresh(t)
+    return {"id": t.id, "latest_first": t.latest_first}
 
