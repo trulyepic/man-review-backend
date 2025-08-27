@@ -4,7 +4,7 @@ from sqlalchemy import select, func
 from typing import Optional, List
 
 from app.database import get_async_session
-from app.models.forum_models import ForumThread, ForumPost, ForumSeriesRef
+from app.models.forum_model import ForumThread, ForumPost, ForumSeriesRef
 from app.models.series_model import Series
 from app.models.user_model import User
 
