@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional, List
@@ -15,8 +16,15 @@ from app.schemas.forum_schemas import (
 # ✅ Use your existing token utils (no changes there)
 from app.utils.token_utils import get_current_user, SECRET_KEY, ALGORITHM
 from jose import jwt, JWTError
+from app.limiter import limiter
+from app.moderation.profanity import ensure_clean
 
 router = APIRouter(prefix="/forum", tags=["forum"])
+
+
+class LockToggleIn(BaseModel):
+    locked: bool
+
 
 # ------------------------------
 # helpers
@@ -115,6 +123,7 @@ async def _thread_to_out(t: ForumThread, db: AsyncSession) -> ForumThreadOut:
         post_count=t.post_count or 0,
         last_post_at=str(t.last_post_at),
         series_refs=srefs,
+        locked=bool(getattr(t, "locked", False)),
     )
 
 async def _post_to_out(p: ForumPost, db: AsyncSession) -> ForumPostOut:
@@ -171,11 +180,23 @@ async def list_threads(
     return [await _thread_to_out(t, db) for t in rows]
 
 @router.post("/threads", response_model=ForumThreadOut)
+@limiter.limit("3/minute;20/hour;60/day")
 async def create_thread(
+request: Request,
     payload: CreateThreadIn,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
+    # ✅ Profanity check (title + first post)
+    try:
+        ensure_clean(payload.title)
+        ensure_clean(payload.first_post_markdown)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "PROFANITY", "message": "Reply contains inappropriate language."}
+        )
+
     # 🔒 limit: max 10 threads per user
     existing_count = (
         await db.execute(
@@ -256,12 +277,34 @@ async def get_thread(
             "post_count": t.post_count or 0,
             "last_post_at": str(t.last_post_at),
             "series_refs": header,
+            "locked": bool(getattr(t, "locked", False)),
         },
         "posts": posts_out,
     }
 
+
+@router.patch("/threads/{thread_id}/lock")
+async def set_thread_lock(
+    thread_id: int,
+    body: LockToggleIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    t = await db.get(ForumThread, thread_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    t.locked = bool(body.locked)
+    await db.commit()
+    await db.refresh(t)
+    return {"id": t.id, "locked": t.locked}
+
+
 @router.post("/threads/{thread_id}/posts")
+@limiter.limit("6/minute;40/hour;150/day")
 async def create_post(
+request: Request,
     thread_id: int,
     payload: CreatePostIn,
     user: User = Depends(get_current_user),
@@ -271,11 +314,29 @@ async def create_post(
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
 
+    # ✅ Fail fast if thread is locked (non-admins)
+    if bool(getattr(thread, "locked", False)) and not _is_admin(user):
+        raise HTTPException(status_code=423, detail="Thread is locked")
+
+    # ✅ Profanity check (reply content)
+    try:
+        ensure_clean(payload.content_markdown)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "PROFANITY", "message": "Reply contains inappropriate language."}
+        )
+
+
     parent_id = payload.parent_id
     if parent_id is not None:
         parent = await db.get(ForumPost, parent_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Parent post not found")
+
+        if bool(getattr(thread, "locked", False)) and not _is_admin(user):
+            raise HTTPException(status_code=423, detail="Thread is locked")
+
         if parent.thread_id != thread_id:
             raise HTTPException(status_code=400, detail="Parent post is from another thread")
 
@@ -300,7 +361,9 @@ async def create_post(
     return await _post_to_plain_dict(post, db)
 
 @router.get("/series-search", response_model=List[SeriesRefOut])
+@limiter.limit("30/minute;1000/day")
 async def forum_series_search(
+request: Request,
     q: str = Query(..., min_length=1),
     limit: int = 10,
     db: AsyncSession = Depends(get_async_session),

@@ -29,6 +29,7 @@ class ForumThreadOut(BaseModel):
     post_count: int
     last_post_at: str
     series_refs: List[SeriesRefOut] = []
+    locked: bool = False
 
 
 class CreateThreadIn(BaseModel):
