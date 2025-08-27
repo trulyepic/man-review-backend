@@ -1,10 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 
 
 from sqlalchemy import text
 
-from app.routes import series_routes, auth, series_detail, reading_list_routes, issues_routes
+from app.routes import series_routes, auth, series_detail, reading_list_routes, issues_routes, forum_routes
 
 from fastapi.responses import RedirectResponse, JSONResponse
 from app.routes import series_routes, auth, series_detail
@@ -54,11 +55,25 @@ app.include_router(auth.router, prefix="/auth")
 app.include_router(series_detail.router)
 app.include_router(reading_list_routes.router)
 app.include_router(issues_routes.router)
+app.include_router(forum_routes.router)
 
 # ✅ Run DB init on startup
 @app.on_event("startup")
 async def on_startup():
-    async with engine.begin() as conn:
-        # Ensure schema exists
-        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "man_review";'))
-        await conn.run_sync(Base.metadata.create_all)
+    # Tiny retry so a momentary DB disconnect doesn't crash the app.
+    for attempt in range(2):
+        try:
+            async with engine.begin() as conn:
+                # Ensure schema exists
+                await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "man_review";'))
+                await conn.run_sync(Base.metadata.create_all)
+            break  # success
+        except Exception as e:
+            if attempt == 0:
+                # Log + retry once after a short pause
+                print(f"[startup] DB init failed, retrying once: {e!r}")
+                await asyncio.sleep(0.5)
+            else:
+                # On the second failure, don't crash the app.
+                # Tables should already exist from previous runs.
+                print(f"[startup] Skipping DB init due to error: {e!r}")
