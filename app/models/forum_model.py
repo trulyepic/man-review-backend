@@ -7,7 +7,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     func,
-    UniqueConstraint,
+    UniqueConstraint, Boolean,
+text
 )
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -38,6 +39,7 @@ class ForumThread(Base):
     # denormalized counters for faster thread list
     post_count = Column(Integer, nullable=False, server_default="0")
     last_post_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    locked = Column(Boolean, nullable=False, server_default=text("false"))
 
     # relationships
     posts = relationship(
