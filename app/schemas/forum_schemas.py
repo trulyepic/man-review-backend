@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
@@ -30,6 +32,7 @@ class ForumThreadOut(BaseModel):
     last_post_at: str
     series_refs: List[SeriesRefOut] = []
     locked: bool = False
+    latest_first: bool = False
 
 
 class CreateThreadIn(BaseModel):
@@ -43,3 +46,6 @@ class CreatePostIn(BaseModel):
     content_markdown: str = Field(min_length=1)
     series_ids: List[int] = Field(default_factory=list)   # <— safer default
     parent_id: Optional[int] = None
+
+class ThreadSettingsIn(BaseModel):
+    latest_first: Optional[bool] = None

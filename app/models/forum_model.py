@@ -41,6 +41,8 @@ class ForumThread(Base):
     last_post_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     locked = Column(Boolean, nullable=False, server_default=text("false"))
 
+    latest_first = Column(Boolean, nullable=False, server_default="false")
+
     # relationships
     posts = relationship(
         "ForumPost",
