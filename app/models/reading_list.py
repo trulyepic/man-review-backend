@@ -1,7 +1,8 @@
 # app/models/reading_list.py
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Boolean, text
 from sqlalchemy.orm import relationship
 from app.database import Base
+from sqlalchemy.dialects.postgresql import UUID
 
 class ReadingList(Base):
     __tablename__ = "reading_lists"
@@ -18,6 +19,15 @@ class ReadingList(Base):
         index=True,
     )
     name = Column(String, nullable=False)
+
+    is_public = Column(Boolean, nullable=False, server_default=text("false"))
+
+    share_token = Column(
+        UUID(as_uuid=True),
+        unique=True,
+        nullable=False,
+        server_default=text("gen_random_uuid()")  # requires pgcrypto extension
+    )
 
     items = relationship(
         "ReadingListItem",

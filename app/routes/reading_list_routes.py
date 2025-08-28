@@ -20,6 +20,20 @@ from app.models.series_model import Series
 
 # Try to read keys from your config; fall back to HS256 if ALGORITHM isn’t exported
 from app.config import SECRET_KEY
+
+import uuid
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from fastapi import HTTPException
+
+from app.schemas.reading_list_schemas import (
+    ReadingListCreate,
+    ReadingListOut,
+    ReadingListItemOut,
+    PublicReadingListOut,
+    AddSeriesRequest,
+)
+
 try:
     from app.config import ALGORITHM  # type: ignore
 except Exception:
@@ -294,3 +308,78 @@ async def delete_list(
 
     await session.delete(rlist)
     await session.commit()
+
+
+
+
+
+
+# --- NEW: share a list (owner only) ---
+@router.post("/{list_id}/share", response_model=ReadingListOut)
+async def share_reading_list(
+    list_id: int,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    stmt = (
+        select(ReadingList)
+        .where(ReadingList.id == list_id, ReadingList.user_id == current_user.id)
+        .options(selectinload(ReadingList.items))
+    )
+    rlist = (await session.execute(stmt)).scalars().first()
+    if not rlist:
+        raise HTTPException(status_code=404, detail="List not found.")
+
+    rlist.is_public = True
+    # share_token already has a server_default, but ensure it exists for legacy rows
+    if not getattr(rlist, "share_token", None):
+        rlist.share_token = uuid.uuid4()
+
+    await session.commit()
+    await session.refresh(rlist)
+    return rlist
+
+# --- NEW: unshare a list (owner only) ---
+@router.delete("/{list_id}/share", response_model=ReadingListOut)
+async def unshare_reading_list(
+    list_id: int,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    stmt = (
+        select(ReadingList)
+        .where(ReadingList.id == list_id, ReadingList.user_id == current_user.id)
+        .options(selectinload(ReadingList.items))
+    )
+    rlist = (await session.execute(stmt)).scalars().first()
+    if not rlist:
+        raise HTTPException(status_code=404, detail="List not found.")
+
+    rlist.is_public = False
+    await session.commit()
+    await session.refresh(rlist)
+    return rlist
+
+# --- NEW: public read by token (no auth) ---
+@router.get("/public/{token}", response_model=PublicReadingListOut)
+async def get_public_list_by_token(token: str, session: AsyncSession = Depends(get_db)):
+    # Validate token
+    try:
+        tok = uuid.UUID(token)
+    except Exception:
+        raise HTTPException(status_code=404, detail="List not found.")
+
+    stmt = (
+        select(ReadingList)
+        .where(ReadingList.share_token == tok, ReadingList.is_public.is_(True))
+        .options(selectinload(ReadingList.items))
+    )
+    rlist = (await session.execute(stmt)).scalars().first()
+    if not rlist:
+        raise HTTPException(status_code=404, detail="List not found.")
+
+    return PublicReadingListOut(
+        name=rlist.name,
+        items=[ReadingListItemOut(series_id=i.series_id) for i in rlist.items],
+    )
+
