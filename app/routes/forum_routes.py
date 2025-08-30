@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from typing import Optional, List
 
 from app.database import get_async_session
@@ -10,7 +10,7 @@ from app.models.series_model import Series
 from app.models.user_model import User
 
 from app.schemas.forum_schemas import (
-    ForumThreadOut, ForumPostOut, CreateThreadIn, CreatePostIn, SeriesRefOut, ThreadSettingsIn,
+    ForumThreadOut, ForumPostOut, CreateThreadIn, CreatePostIn, SeriesRefOut, ThreadSettingsIn, UpdatePostIn
 )
 
 # ✅ Use your existing token utils (no changes there)
@@ -546,4 +546,60 @@ async def update_thread_settings(
     await db.commit()
     await db.refresh(t)
     return {"id": t.id, "latest_first": t.latest_first}
+
+
+@router.patch("/threads/{thread_id}/posts/{post_id}", response_model=ForumPostOut)
+@limiter.limit("12/minute;80/hour;300/day")
+async def update_post(
+    request: Request,
+    thread_id: int,
+    post_id: int,
+    payload: UpdatePostIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    thread = await db.get(ForumThread, thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    post = await db.get(ForumPost, post_id)
+    if not post or post.thread_id != thread_id:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    # If thread is locked, only admins may edit
+    if bool(getattr(thread, "locked", False)) and not _is_admin(user):
+        raise HTTPException(status_code=423, detail="Thread is locked")
+
+    # Only admins or the author may edit
+    if not (_is_admin(user) or post.author_id == user.id):
+        raise HTTPException(status_code=403, detail="Admins or the post owner may edit this post.")
+
+    # Profanity check
+    try:
+        ensure_clean(payload.content_markdown)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "PROFANITY", "message": "Reply contains inappropriate language."}
+        )
+
+    # Update the content
+    post.content_markdown = payload.content_markdown
+
+    # Replace series refs for this post (if series_ids provided)
+    await db.execute(
+        delete(ForumSeriesRef).where(
+            ForumSeriesRef.thread_id == thread_id,
+            ForumSeriesRef.post_id == post_id,
+        )
+    )
+    for sid in (payload.series_ids or []):
+        db.add(ForumSeriesRef(thread_id=thread_id, post_id=post_id, series_id=sid))
+
+    await db.commit()
+    await db.refresh(post)
+
+    # Return normalized shape
+    return await _post_to_out(post, db)
+
 

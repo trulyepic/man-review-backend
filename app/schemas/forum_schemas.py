@@ -49,3 +49,8 @@ class CreatePostIn(BaseModel):
 
 class ThreadSettingsIn(BaseModel):
     latest_first: Optional[bool] = None
+
+
+class UpdatePostIn(BaseModel):
+    content_markdown: str
+    series_ids: List[int] = []
