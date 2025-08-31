@@ -10,7 +10,8 @@ from app.models.series_model import Series
 from app.models.user_model import User
 
 from app.schemas.forum_schemas import (
-    ForumThreadOut, ForumPostOut, CreateThreadIn, CreatePostIn, SeriesRefOut, ThreadSettingsIn, UpdatePostIn
+    ForumThreadOut, ForumPostOut, CreateThreadIn, CreatePostIn, SeriesRefOut, ThreadSettingsIn, UpdatePostIn,
+    UpdateThreadIn
 )
 
 # ✅ Use your existing token utils (no changes there)
@@ -601,5 +602,82 @@ async def update_post(
 
     # Return normalized shape
     return await _post_to_out(post, db)
+
+
+from sqlalchemy import select, func, delete
+from fastapi import HTTPException, status
+
+@router.patch("/threads/{thread_id}", response_model=ForumThreadOut)
+@limiter.limit("6/minute;40/hour;150/day")
+async def update_thread(
+    request: Request,
+    thread_id: int,
+    payload: UpdateThreadIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    thread = await db.get(ForumThread, thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    is_admin = _is_admin(user)
+    is_owner = thread.author_id == user.id
+    if not (is_admin or is_owner):
+        raise HTTPException(status_code=403, detail="Admins or the thread owner may edit this thread.")
+
+    # If locked, only admins may edit anything
+    if bool(getattr(thread, "locked", False)) and not is_admin:
+        raise HTTPException(status_code=423, detail="Thread is locked")
+
+    # Validate + update title
+    if payload.title is not None:
+        try:
+            ensure_clean(payload.title)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "PROFANITY", "message": "Title contains inappropriate language."}
+            )
+        thread.title = payload.title
+
+    # Update the first post if body provided
+    if payload.first_post_markdown is not None:
+        try:
+            ensure_clean(payload.first_post_markdown)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "PROFANITY", "message": "Reply contains inappropriate language."}
+            )
+
+        first_post = (
+            await db.execute(
+                select(ForumPost)
+                .where(ForumPost.thread_id == thread_id)
+                .order_by(ForumPost.created_at.asc())
+                .limit(1)
+            )
+        ).scalars().first()
+
+        if not first_post:
+            raise HTTPException(status_code=404, detail="Original post not found")
+
+        first_post.content_markdown = payload.first_post_markdown
+
+    # Replace header-level series refs IF provided
+    if payload.series_ids is not None:
+        await db.execute(
+            delete(ForumSeriesRef).where(
+                ForumSeriesRef.thread_id == thread_id,
+                ForumSeriesRef.post_id == None,  # header refs only
+            )
+        )
+        for sid in map(int, payload.series_ids):
+            db.add(ForumSeriesRef(thread_id=thread_id, series_id=sid))
+
+    await db.commit()
+    await db.refresh(thread)
+    return await _thread_to_out(thread, db)
+
 
 

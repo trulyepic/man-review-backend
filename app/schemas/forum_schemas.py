@@ -54,3 +54,10 @@ class ThreadSettingsIn(BaseModel):
 class UpdatePostIn(BaseModel):
     content_markdown: str
     series_ids: List[int] = []
+
+class UpdateThreadIn(BaseModel):
+    # All optional so the client can send only what changed
+    title: Optional[str] = Field(default=None, min_length=3, max_length=200)
+    first_post_markdown: Optional[str] = Field(default=None, min_length=1)
+    # Optional: only replace header refs when provided
+    series_ids: Optional[List[int]] = None
