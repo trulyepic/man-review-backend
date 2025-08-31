@@ -1,7 +1,7 @@
 # app/routes/reading_list_routes.py
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -382,4 +382,89 @@ async def get_public_list_by_token(token: str, session: AsyncSession = Depends(g
         name=rlist.name,
         items=[ReadingListItemOut(series_id=i.series_id) for i in rlist.items],
     )
+
+
+@router.get("/me/paged")
+async def get_my_lists_paged(
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+):
+    total_stmt = select(func.count(ReadingList.id)).where(ReadingList.user_id == current_user.id)
+    total = (await session.execute(total_stmt)).scalar_one()
+
+    if total == 0:
+        return {"items": [], "page": page, "page_size": page_size, "total": 0, "has_more": False}
+
+    offset = (page - 1) * page_size
+    page_stmt = (
+        select(
+            ReadingList.id,
+            ReadingList.name,
+            ReadingList.is_public,
+            ReadingList.share_token,
+            func.count(ReadingListItem.id).label("item_count"),
+        )
+        .where(ReadingList.user_id == current_user.id)
+        .join(ReadingListItem, ReadingListItem.list_id == ReadingList.id, isouter=True)
+        .group_by(ReadingList.id)
+        .order_by(ReadingList.id.desc())
+        .limit(page_size)
+        .offset(offset)
+    )
+    rows = (await session.execute(page_stmt)).all()
+    items = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "is_public": r.is_public,
+            "share_token": str(r.share_token),
+            "item_count": int(r.item_count or 0),
+        }
+        for r in rows
+    ]
+    has_more = (offset + len(items)) < total
+    return {"items": items, "page": page, "page_size": page_size, "total": total, "has_more": has_more}
+
+
+@router.get("/{list_id}/items/paged")
+async def get_list_items_paged(
+    list_id: int,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+):
+    # ownership
+    owns_stmt = select(func.count(ReadingList.id)).where(
+        ReadingList.id == list_id, ReadingList.user_id == current_user.id
+    )
+    if (await session.execute(owns_stmt)).scalar_one() == 0:
+        raise HTTPException(status_code=404, detail="List not found.")
+
+    total_stmt = select(func.count(ReadingListItem.id)).where(ReadingListItem.list_id == list_id)
+    total = (await session.execute(total_stmt)).scalar_one()
+
+    if total == 0:
+        return {"items": [], "page": page, "page_size": page_size, "total": 0, "has_more": False}
+
+    offset = (page - 1) * page_size
+    items_stmt = (
+        select(ReadingListItem)
+        .where(ReadingListItem.list_id == list_id)
+        .order_by(ReadingListItem.id.desc())
+        .limit(page_size)
+        .offset(offset)
+    )
+    page_items = list((await session.execute(items_stmt)).scalars().all())
+    has_more = (offset + len(page_items)) < total
+
+    return {
+        "items": [{"series_id": i.series_id} for i in page_items],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "has_more": has_more,
+    }
 
