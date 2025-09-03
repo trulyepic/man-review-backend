@@ -13,6 +13,7 @@ from app.schemas.forum_schemas import (
     ForumThreadOut, ForumPostOut, CreateThreadIn, CreatePostIn, SeriesRefOut, ThreadSettingsIn, UpdatePostIn,
     UpdateThreadIn
 )
+from app.utils.forum_content import reject_disallowed_images
 
 # ✅ Use your existing token utils (no changes there)
 from app.utils.token_utils import get_current_user, SECRET_KEY, ALGORITHM
@@ -358,6 +359,8 @@ request: Request,
             detail={"code": "PROFANITY", "message": "Reply contains inappropriate language."}
         )
 
+    reject_disallowed_images(payload.content_markdown)
+
 
     parent_id = payload.parent_id
     if parent_id is not None:
@@ -583,6 +586,8 @@ async def update_post(
             status_code=400,
             detail={"code": "PROFANITY", "message": "Reply contains inappropriate language."}
         )
+
+    reject_disallowed_images(payload.content_markdown)
 
     # Update the content
     post.content_markdown = payload.content_markdown

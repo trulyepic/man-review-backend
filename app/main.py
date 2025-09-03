@@ -5,7 +5,8 @@ import asyncio
 
 from sqlalchemy import text
 
-from app.routes import series_routes, auth, series_detail, reading_list_routes, issues_routes, forum_routes
+from app.routes import series_routes, auth, series_detail, reading_list_routes, issues_routes, forum_routes, \
+    forum_media_routes
 
 from fastapi.responses import RedirectResponse, JSONResponse
 from app.routes import series_routes, auth, series_detail
@@ -64,6 +65,7 @@ app.include_router(reading_list_routes.router)
 app.include_router(issues_routes.router)
 app.include_router(forum_routes.router)
 app.include_router(sitemap.router)
+app.include_router(forum_media_routes.router)
 
 # ✅ Run DB init on startup
 @app.on_event("startup")
