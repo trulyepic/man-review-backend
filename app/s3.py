@@ -1,3 +1,5 @@
+import io
+from urllib.parse import quote
 
 import boto3
 import uuid
@@ -14,6 +16,8 @@ s3 = boto3.client(
 def sanitize_folder_name(name: str) -> str:
     # Remove or replace any non-safe S3 characters
     return re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
+
+_SAFE_FILENAME_RE = re.compile(r'[^a-zA-Z0-9._-]+')
 
 # def upload_to_s3(file_bytes, filename: str, content_type: str, folder: str) -> str:
 #     sanitized_folder = sanitize_folder_name(folder)
@@ -36,7 +40,54 @@ def upload_to_s3(file_bytes, filename: str, content_type: str, folder: str, *, s
         key,
         ExtraArgs={"ContentType": content_type}
     )
-    return f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
+
+    key_encoded = quote(key, safe="/-._")
+    return f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key_encoded}"
 
 def delete_from_s3(key: str):
     s3.delete_object(Bucket=AWS_BUCKET_NAME, Key=key)
+
+
+def sanitize_filename(name: str) -> str:
+    """
+    Make sure filenames are URL-safe and S3-friendly:
+    - Trim whitespace
+    - Replace spaces with '-'
+    - Replace unsafe chars with '-'
+    - Collapse repeats
+    """
+    name = name.strip()
+    name = re.sub(r'\s+', '-', name)          # spaces -> dash
+    name = _SAFE_FILENAME_RE.sub('-', name)   # unsafe -> dash
+    name = re.sub(r'-{2,}', '-', name)        # collapse ---
+    if not name:
+        name = "file"
+    return name
+
+def upload_forum_media(file_bytes, filename: str, content_type: str, thread_id: int, user_id: int) -> str:
+    """
+    Specialized upload for forum memes/images/GIFs.
+    Path: forum/<thread_id>/<user_id>/<uuid>_<filename>
+    """
+    sanitized_thread = sanitize_folder_name(str(thread_id))
+    sanitized_user = sanitize_folder_name(str(user_id))
+    safe_name = sanitize_filename(filename or "upload")
+
+    key = f"forum/{sanitized_thread}/{sanitized_user}/{uuid.uuid4()}_{safe_name}"
+
+    if isinstance(file_bytes, (bytes, bytearray)):
+        file_bytes = io.BytesIO(file_bytes)
+
+    s3.upload_fileobj(
+        file_bytes,
+        AWS_BUCKET_NAME,
+        key,
+        ExtraArgs={
+            "ContentType": content_type,
+            "ACL": "public-read",  # required for embedding in posts
+            "CacheControl": "public, max-age=31536000, immutable",
+        },
+    )
+
+    key_encoded = quote(key, safe="/-._")
+    return f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key_encoded}"
