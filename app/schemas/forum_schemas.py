@@ -20,6 +20,8 @@ class ForumPostOut(BaseModel):
     updated_at: str
     series_refs: List[SeriesRefOut] = []
     parent_id: Optional[int] = None
+    heart_count: int = 0
+    viewer_has_hearted: bool = False
 
 
 class ForumThreadOut(BaseModel):

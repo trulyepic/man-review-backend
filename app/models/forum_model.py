@@ -88,6 +88,7 @@ class ForumPost(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    heart_count = Column(Integer, nullable=False, server_default="0")
 
     # relationships
     thread = relationship("ForumThread", back_populates="posts")
@@ -137,3 +138,28 @@ class ForumSeriesRef(Base):
     # relationships
     thread = relationship("ForumThread", back_populates="series_refs")
     post = relationship("ForumPost", back_populates="series_refs")
+
+
+class ForumReaction(Base):
+    __tablename__ = "forum_reactions"
+    __table_args__ = (
+        UniqueConstraint("post_id", "user_id", name="uq_forum_reaction_post_user"),
+        {"schema": SCHEMA},
+    )
+
+    id = Column(Integer, primary_key=True)
+    post_id = Column(
+        Integer,
+        ForeignKey(f"{SCHEMA}.forum_posts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        Integer,
+        ForeignKey(f"{SCHEMA}.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # single MVP reaction type ("HEART"), keep extensible
+    kind = Column(String(20), nullable=False, server_default="HEART")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -5,7 +5,7 @@ from sqlalchemy import select, func, delete
 from typing import Optional, List
 
 from app.database import get_async_session
-from app.models.forum_model import ForumThread, ForumPost, ForumSeriesRef
+from app.models.forum_model import ForumThread, ForumPost, ForumSeriesRef, ForumReaction
 from app.models.series_model import Series
 from app.models.user_model import User
 
@@ -27,6 +27,28 @@ router = APIRouter(prefix="/forum", tags=["forum"])
 class LockToggleIn(BaseModel):
     locked: bool
 
+class HeartToggleOut(BaseModel):
+    hearted: bool
+    count: int
+
+
+async def _post_heart_bits(db: AsyncSession, post_id: int, viewer_id: Optional[int]) -> tuple[int, bool]:
+    # count hearts
+    count_stmt = select(func.count(ForumReaction.id)).where(
+        ForumReaction.post_id == post_id, ForumReaction.kind == "HEART"
+    )
+    heart_count = int((await db.execute(count_stmt)).scalar_one() or 0)
+
+    has = False
+    if viewer_id:
+        has_stmt = select(func.count(ForumReaction.id)).where(
+            ForumReaction.post_id == post_id,
+            ForumReaction.user_id == viewer_id,
+            ForumReaction.kind == "HEART",
+        )
+        has = (await db.execute(has_stmt)).scalar_one() > 0
+    return heart_count, has
+
 
 # ------------------------------
 # helpers
@@ -34,7 +56,7 @@ class LockToggleIn(BaseModel):
 def _is_admin(user: "User") -> bool:
     return (getattr(user, "role", "") or "").upper() == "ADMIN"
 
-async def _post_to_plain_dict(p: ForumPost, db: AsyncSession) -> dict:
+async def _post_to_plain_dict(p: ForumPost, db: AsyncSession, viewer: Optional["User"]=None) -> dict:
     refs = await db.execute(
         select(ForumSeriesRef, Series)
         .join(Series, Series.id == ForumSeriesRef.series_id)
@@ -55,6 +77,8 @@ async def _post_to_plain_dict(p: ForumPost, db: AsyncSession) -> dict:
         u = await db.get(User, p.author_id)
         author_username = getattr(u, "username", None) if u else None
 
+    heart_count, viewer_has = await _post_heart_bits(db, p.id, getattr(viewer, "id", None))
+
     # Always include parent_id; use 0 for top-level
     return {
         "id": p.id,
@@ -64,6 +88,8 @@ async def _post_to_plain_dict(p: ForumPost, db: AsyncSession) -> dict:
         "updated_at": str(p.updated_at),
         "series_refs": srefs,
         "parent_id": int(p.parent_id) if p.parent_id is not None else 0,
+        "heart_count": int(getattr(p, "heart_count", heart_count) or heart_count),
+        "viewer_has_hearted": bool(viewer_has),
     }
 
 def dump_model(m):
@@ -129,7 +155,7 @@ async def _thread_to_out(t: ForumThread, db: AsyncSession) -> ForumThreadOut:
         latest_first=bool(getattr(t, "latest_first", False)),
     )
 
-async def _post_to_out(p: ForumPost, db: AsyncSession) -> ForumPostOut:
+async def _post_to_out(p: ForumPost, db: AsyncSession, viewer: Optional["User"]=None) -> ForumPostOut:
     refs = await db.execute(
         select(ForumSeriesRef, Series)
         .join(Series, Series.id == ForumSeriesRef.series_id)
@@ -151,6 +177,8 @@ async def _post_to_out(p: ForumPost, db: AsyncSession) -> ForumPostOut:
         u = await db.get(User, p.author_id)
         author_username = getattr(u, "username", None) if u else None
 
+    heart_count, viewer_has = await _post_heart_bits(db, p.id, getattr(viewer, "id", None))
+
     return ForumPostOut(
         id=p.id,
         author_username=author_username,
@@ -159,6 +187,8 @@ async def _post_to_out(p: ForumPost, db: AsyncSession) -> ForumPostOut:
         updated_at=str(p.updated_at),
         series_refs=srefs,
         parent_id=p.parent_id if p.parent_id is not None else 0,
+        heart_count=int(getattr(p, "heart_count", heart_count) or heart_count),
+        viewer_has_hearted=bool(viewer_has),
     )
 
 # ------------------------------
@@ -289,7 +319,7 @@ request: Request,
 async def get_thread(
     thread_id: int,
     db: AsyncSession = Depends(get_async_session),
-    _viewer: Optional[User] = Depends(get_current_user_optional),  # optional
+    viewer: Optional[User] = Depends(get_current_user_optional),  # optional
 ):
     t = await db.get(ForumThread, thread_id)
     if not t:
@@ -303,7 +333,7 @@ async def get_thread(
             .order_by(ForumPost.created_at.asc())
         )
     ).scalars().all()
-    posts_out = [await _post_to_plain_dict(p, db) for p in posts]
+    posts_out = [await _post_to_plain_dict(p, db, viewer) for p in posts]
 
     # ✅ Reuse the shared mapper so locked + latest_first + series_refs are all included
     thread_out = await _thread_to_out(t, db)
@@ -683,6 +713,60 @@ async def update_thread(
     await db.commit()
     await db.refresh(thread)
     return await _thread_to_out(thread, db)
+
+
+@router.post("/threads/{thread_id}/posts/{post_id}/heart", response_model=HeartToggleOut)
+@limiter.limit("30/minute;1000/day")
+async def toggle_heart(
+    request: Request,
+    thread_id: int,
+    post_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_session),
+):
+    post = await db.get(ForumPost, post_id)
+    if not post or post.thread_id != thread_id:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    # Reactions are allowed on locked threads per product note.
+
+    existing = (
+        await db.execute(
+            select(ForumReaction)
+            .where(
+                ForumReaction.post_id == post_id,
+                ForumReaction.user_id == user.id,
+                ForumReaction.kind == "HEART",
+            )
+            .limit(1)
+        )
+    ).scalars().first()
+
+    if existing:
+        # remove
+        await db.delete(existing)
+        # denorm
+        if hasattr(post, "heart_count") and post.heart_count is not None:
+            post.heart_count = max(0, int(post.heart_count) - 1)
+        await db.commit()
+        # count
+        count_stmt = select(func.count(ForumReaction.id)).where(
+            ForumReaction.post_id == post_id, ForumReaction.kind == "HEART"
+        )
+        count = int((await db.execute(count_stmt)).scalar_one() or 0)
+        return HeartToggleOut(hearted=False, count=count)
+    else:
+        # add
+        db.add(ForumReaction(post_id=post_id, user_id=user.id, kind="HEART"))
+        # denorm
+        if hasattr(post, "heart_count") and post.heart_count is not None:
+            post.heart_count = int(post.heart_count) + 1
+        await db.commit()
+        count_stmt = select(func.count(ForumReaction.id)).where(
+            ForumReaction.post_id == post_id, ForumReaction.kind == "HEART"
+        )
+        count = int((await db.execute(count_stmt)).scalar_one() or 0)
+        return HeartToggleOut(hearted=True, count=count)
 
 
 
