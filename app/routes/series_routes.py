@@ -186,51 +186,6 @@ async def get_ranked_series(
 
 
 
-
-# @router.get("/series/rankings", response_model=List[SeriesOut])
-# async def get_ranked_series(db: AsyncSession = Depends(get_db)):
-#     query = await db.execute(
-#         select(Series, SeriesDetail).join(SeriesDetail, Series.id == SeriesDetail.series_id, isouter=True)
-#     )
-#     results = query.all()
-#
-#     ranked_series = []
-#     for series, detail in results:
-#         # Compute average for each category if counts exist
-#         def safe_avg(total, count):
-#             return total / count if count else 0
-#
-#         if detail:
-#             story = safe_avg(detail.story_total, detail.story_count)
-#             chars = safe_avg(detail.characters_total, detail.characters_count)
-#             world = safe_avg(detail.worldbuilding_total, detail.worldbuilding_count)
-#             art = safe_avg(detail.art_total, detail.art_count)
-#             drama = safe_avg(detail.drama_or_fight_total, detail.drama_or_fight_count)
-#             final_score = round((story + chars + world + art + drama) / 5, 2)
-#         else:
-#             final_score = 0.0
-#
-#         ranked_series.append({
-#             "id": series.id,
-#             "title": series.title,
-#             "genre": series.genre,
-#             "type": series.type,
-#             "author": series.author,
-#             "artist": series.artist,
-#             "cover_url": series.cover_url,
-#             "vote_count": series.vote_count or 0,
-#             "final_score": final_score,
-#         })
-#
-#     # Sort ranked series (highest score first)
-#     ranked_series.sort(key=lambda x: x["final_score"], reverse=True)
-#
-#     # Assign dynamic rank; if score is 0, show as unranked
-#     for idx, series in enumerate(ranked_series):
-#         series["rank"] = idx + 1 if series["final_score"] > 0 else None
-#
-#     return ranked_series
-
 @router.get("/series/summary/{series_id}", response_model=RankedSeriesOut)
 async def get_series_summary(
     series_id: int,

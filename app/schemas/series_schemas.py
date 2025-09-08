@@ -15,6 +15,7 @@ class SeriesStatusEnum(str, Enum):
     COMPLETE = "COMPLETE"
     HIATUS = "HIATUS"
     UNKNOWN = "UNKNOWN"
+    SEASON_END = "SEASON_END"
 
 class SeriesCreate(BaseModel):
     title: str
