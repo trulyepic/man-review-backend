@@ -14,6 +14,7 @@ class SeriesStatus(enum.Enum):
     COMPLETE = "COMPLETE"
     HIATUS = "HIATUS"
     UNKNOWN = "UNKNOWN"
+    SEASON_END = "SEASON_END"
 
 class Series(Base):
     __tablename__ = 'series'
