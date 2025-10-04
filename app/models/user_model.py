@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -13,6 +13,8 @@ class User(Base):
     role = Column(String, default="GENERAL")  # GENERAL or ADMIN
     email = Column(String, unique=True, index=True, nullable=True)
     is_verified = Column(Boolean, default=False, nullable=False, server_default="false")
+
+    registered_at = Column(DateTime(timezone=True), nullable=True)
 
     reading_lists = relationship("ReadingList", cascade="all, delete-orphan", backref="owner")
 

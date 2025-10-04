@@ -1,6 +1,6 @@
 
 from pydantic import BaseModel, EmailStr, field_validator
-
+from typing import Optional
 
 class UserCreate(BaseModel):
     username: str
@@ -28,5 +28,10 @@ class UserLogin(BaseModel):
     username: str
     password: str
     captcha_token: str
+
+class ResendVerification(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
+    captcha_token: Optional[str] = None
 
 
