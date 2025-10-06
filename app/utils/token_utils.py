@@ -13,7 +13,7 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 # ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
-ACCESS_TOKEN_EXPIRE_MINUTES = 480 # 8 hours
+ACCESS_TOKEN_EXPIRE_MINUTES =4320 #3 days # 480 8 hours
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
