@@ -63,3 +63,24 @@ class UpdateThreadIn(BaseModel):
     first_post_markdown: Optional[str] = Field(default=None, min_length=1)
     # Optional: only replace header refs when provided
     series_ids: Optional[List[int]] = None
+
+
+class PageOut(BaseModel):
+    items: List[ForumThreadOut]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+    has_prev: bool
+    has_next: bool
+
+
+class ThreadPostsPageOut(BaseModel):
+    thread: ForumThreadOut
+    posts: List[ForumPostOut]         # OP first, then this page's roots + their descendants
+    page: int
+    page_size: int
+    total_top_level: int              # number of top-level replies (excludes OP)
+    total_pages: int
+    has_prev: bool
+    has_next: bool
