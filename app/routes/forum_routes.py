@@ -1,3 +1,5 @@
+import math
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +13,7 @@ from app.models.user_model import User
 
 from app.schemas.forum_schemas import (
     ForumThreadOut, ForumPostOut, CreateThreadIn, CreatePostIn, SeriesRefOut, ThreadSettingsIn, UpdatePostIn,
-    UpdateThreadIn
+    UpdateThreadIn, PageOut, ThreadPostsPageOut
 )
 from app.utils.forum_content import reject_disallowed_images
 
@@ -315,6 +317,51 @@ request: Request,
 #         "posts": posts_out,
 #     }
 
+
+@router.get("/threads-paged", response_model=PageOut)
+async def list_threads_paged(
+    q: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    author_id: Optional[int] = None,  # allows "my threads" count without fetching 1000 rows
+    db: AsyncSession = Depends(get_async_session),
+    _viewer: Optional[User] = Depends(get_current_user_optional),
+):
+    filters = []
+    if q:
+        filters.append(ForumThread.title.ilike(f"%{q}%"))
+    if author_id is not None:
+        filters.append(ForumThread.author_id == author_id)
+
+    # total
+    total_stmt = select(func.count(ForumThread.id))
+    if filters:
+        total_stmt = total_stmt.where(*filters)
+    total = int((await db.execute(total_stmt)).scalar_one() or 0)
+
+    # page rows (stable order)
+    stmt = select(ForumThread).order_by(
+        ForumThread.last_post_at.desc(),
+        ForumThread.id.desc(),
+    )
+    if filters:
+        stmt = stmt.where(*filters)
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+
+    rows = (await db.execute(stmt)).scalars().all()
+    items = [await _thread_to_out(t, db) for t in rows]
+
+    total_pages = max(1, math.ceil(total / page_size))
+    return PageOut(
+        items=items,
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=total_pages,
+        has_prev=page > 1,
+        has_next=page < total_pages,
+    )
+
 @router.get("/threads/{thread_id}")
 async def get_thread(
     thread_id: int,
@@ -343,6 +390,133 @@ async def get_thread(
         "thread": dump_model(thread_out),
         "posts": posts_out,
     }
+
+
+@router.get("/threads/{thread_id}/posts-paged", response_model=ThreadPostsPageOut)
+async def get_thread_posts_paged(
+    thread_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_session),
+    viewer: Optional[User] = Depends(get_current_user_optional),
+):
+    # 1) Thread + OP
+    t = await db.get(ForumThread, thread_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    # Oldest post is the OP
+    first_post = (
+        await db.execute(
+            select(ForumPost)
+            .where(ForumPost.thread_id == thread_id)
+            .order_by(ForumPost.created_at.asc(), ForumPost.id.asc())
+            .limit(1)
+        )
+    ).scalars().first()
+    if not first_post:
+        # shouldn't happen, but be safe
+        out = ThreadPostsPageOut(
+            thread=await _thread_to_out(t, db),
+            posts=[],
+            page=page,
+            page_size=page_size,
+            total_top_level=0,
+            total_pages=1,
+            has_prev=False,
+            has_next=False,
+        )
+        return out
+
+    # 2) Count top-level replies (parent IS NULL) excluding OP
+    total_top_level = int(
+        (
+            await db.execute(
+                select(func.count(ForumPost.id)).where(
+                    ForumPost.thread_id == thread_id,
+                    ForumPost.parent_id.is_(None),
+                    ForumPost.id != first_post.id,
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
+    total_pages = max(1, math.ceil(total_top_level / page_size))
+    page = min(page, total_pages)
+
+    # 3) Page of top-level roots (stable order: oldest→newest)
+    roots = (
+        await db.execute(
+            select(ForumPost)
+            .where(
+                ForumPost.thread_id == thread_id,
+                ForumPost.parent_id.is_(None),
+                ForumPost.id != first_post.id,
+            )
+            .order_by(ForumPost.created_at.asc(), ForumPost.id.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).scalars().all()
+    root_ids = [p.id for p in roots]
+
+    # 4) Fetch descendants for those roots (iterative, avoids recursive CTE complexity)
+    descendants: list[ForumPost] = []
+    frontier = set(root_ids)
+    while frontier:
+        children = (
+            await db.execute(
+                select(ForumPost)
+                .where(
+                    ForumPost.thread_id == thread_id,
+                    ForumPost.parent_id.in_(frontier),
+                )
+            )
+        ).scalars().all()
+        if not children:
+            break
+        descendants.extend(children)
+        frontier = set(c.id for c in children)
+
+    # 5) Build a flat list: OP first, then roots, each followed by their subtree
+    #    The frontend sorts children per parent; order here just needs to be consistent.
+    by_parent: dict[int, list[ForumPost]] = {}
+    subset = roots + descendants
+    for p in subset:
+        pid = int(p.parent_id) if p.parent_id is not None else 0
+        by_parent.setdefault(pid, []).append(p)
+
+    # sort roots by time asc (children are sorted by the client)
+    roots_sorted = sorted(roots, key=lambda p: (p.created_at, p.id))
+
+    ordered_models: list[ForumPost] = [first_post]
+    def walk(parent: ForumPost):
+        kids = by_parent.get(parent.id, [])
+        # children order not critical; client sorts by created_at asc
+        for k in kids:
+            ordered_models.append(k)
+            walk(k)
+
+    for r in roots_sorted:
+        ordered_models.append(r)
+        walk(r)
+
+    # 6) Map to output
+    thread_out = await _thread_to_out(t, db)
+    posts_out: list[ForumPostOut] = []
+    for m in ordered_models:
+        posts_out.append(await _post_to_out(m, db, viewer))
+
+    return ThreadPostsPageOut(
+        thread=thread_out,
+        posts=posts_out,
+        page=page,
+        page_size=page_size,
+        total_top_level=total_top_level,
+        total_pages=total_pages,
+        has_prev=page > 1,
+        has_next=page < total_pages,
+    )
 
 
 @router.patch("/threads/{thread_id}/lock")
