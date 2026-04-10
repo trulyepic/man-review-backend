@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 class ReadingListCreate(BaseModel):
@@ -7,6 +7,7 @@ class ReadingListCreate(BaseModel):
 
 class ReadingListItemOut(BaseModel):
     series_id: int
+    left_off_chapter: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -24,6 +25,10 @@ class ReadingListOut(BaseModel):
 
 class AddSeriesRequest(BaseModel):
     series_id: int
+    left_off_chapter: Optional[str] = Field(default=None, max_length=50)
+
+class UpdateReadingListItemRequest(BaseModel):
+    left_off_chapter: Optional[str] = Field(default=None, max_length=50)
 
 class PublicReadingListOut(BaseModel):
     name: str

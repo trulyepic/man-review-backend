@@ -56,5 +56,6 @@ class ReadingListItem(Base):
         nullable=False,
         index=True,
     )
+    left_off_chapter = Column(String(50), nullable=True)
 
     reading_list = relationship("ReadingList", back_populates="items")
