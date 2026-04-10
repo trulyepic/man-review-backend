@@ -32,6 +32,7 @@ from app.schemas.reading_list_schemas import (
     ReadingListItemOut,
     PublicReadingListOut,
     AddSeriesRequest,
+    UpdateReadingListItemRequest,
 )
 
 try:
@@ -42,6 +43,16 @@ except Exception:
 router = APIRouter(prefix="/reading-lists", tags=["reading-lists"])
 MAX_LISTS_PER_USER = 2
 MAX_ITEMS_PER_LIST_NON_ADMIN = 35
+MAX_LEFT_OFF_CHAPTER_LENGTH = 50
+
+
+def normalize_left_off_chapter(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return normalized[:MAX_LEFT_OFF_CHAPTER_LENGTH]
 
 
 def is_admin_user(user: User) -> bool:
@@ -218,12 +229,23 @@ async def add_series_to_list(
     if not series_exists:
         raise HTTPException(status_code=404, detail="Series not found.")
 
-    # Idempotent add: if already present, just return the list
+    # Idempotent add: if already present, optionally update progress and return the list
     exists_stmt = select(ReadingListItem).where(
         ReadingListItem.list_id == list_id, ReadingListItem.series_id == payload.series_id
     )
     existing = (await session.execute(exists_stmt)).scalars().first()
     if existing:
+        next_chapter = normalize_left_off_chapter(payload.left_off_chapter)
+        if existing.left_off_chapter != next_chapter:
+            existing.left_off_chapter = next_chapter
+            await session.commit()
+            rlist = (
+                await session.execute(
+                    select(ReadingList)
+                    .where(ReadingList.id == list_id)
+                    .options(selectinload(ReadingList.items))
+                )
+            ).scalars().first()
         return rlist
 
     # Enforce per-list item cap for non-admins
@@ -240,7 +262,13 @@ async def add_series_to_list(
             )
 
     # Proceed to add
-    session.add(ReadingListItem(list_id=list_id, series_id=payload.series_id))
+    session.add(
+        ReadingListItem(
+            list_id=list_id,
+            series_id=payload.series_id,
+            left_off_chapter=normalize_left_off_chapter(payload.left_off_chapter),
+        )
+    )
     await session.commit()
 
     # Return updated list with items
@@ -253,6 +281,43 @@ async def add_series_to_list(
     ).scalars().first()
     return rlist
 
+
+@router.patch("/{list_id}/items/{series_id}", response_model=ReadingListOut)
+async def update_series_in_list(
+    list_id: int,
+    series_id: int,
+    payload: UpdateReadingListItemRequest,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    list_stmt = (
+        select(ReadingList)
+        .where(ReadingList.id == list_id, ReadingList.user_id == current_user.id)
+        .options(selectinload(ReadingList.items))
+    )
+    rlist = (await session.execute(list_stmt)).scalars().first()
+    if not rlist:
+        raise HTTPException(status_code=404, detail="List not found.")
+
+    item_stmt = select(ReadingListItem).where(
+        ReadingListItem.list_id == list_id,
+        ReadingListItem.series_id == series_id,
+    )
+    item = (await session.execute(item_stmt)).scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Series not found in this list.")
+
+    item.left_off_chapter = normalize_left_off_chapter(payload.left_off_chapter)
+    await session.commit()
+
+    rlist = (
+        await session.execute(
+            select(ReadingList)
+            .where(ReadingList.id == list_id)
+            .options(selectinload(ReadingList.items))
+        )
+    ).scalars().first()
+    return rlist
 
 
 @router.delete("/{list_id}/items/{series_id}", response_model=ReadingListOut)
@@ -380,7 +445,13 @@ async def get_public_list_by_token(token: str, session: AsyncSession = Depends(g
 
     return PublicReadingListOut(
         name=rlist.name,
-        items=[ReadingListItemOut(series_id=i.series_id) for i in rlist.items],
+        items=[
+            ReadingListItemOut(
+                series_id=i.series_id,
+                left_off_chapter=i.left_off_chapter,
+            )
+            for i in rlist.items
+        ],
     )
 
 
@@ -461,7 +532,13 @@ async def get_list_items_paged(
     has_more = (offset + len(page_items)) < total
 
     return {
-        "items": [{"series_id": i.series_id} for i in page_items],
+        "items": [
+            {
+                "series_id": i.series_id,
+                "left_off_chapter": i.left_off_chapter,
+            }
+            for i in page_items
+        ],
         "page": page,
         "page_size": page_size,
         "total": total,

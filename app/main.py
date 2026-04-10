@@ -77,6 +77,14 @@ async def on_startup():
                 # Ensure schema exists
                 await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "man_review";'))
                 await conn.run_sync(Base.metadata.create_all)
+                await conn.execute(
+                    text(
+                        """
+                        ALTER TABLE IF EXISTS man_review.reading_list_items
+                        ADD COLUMN IF NOT EXISTS left_off_chapter VARCHAR(50)
+                        """
+                    )
+                )
             break  # success
         except Exception as e:
             if attempt == 0:
