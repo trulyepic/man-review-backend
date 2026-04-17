@@ -16,6 +16,10 @@ class SeriesStatus(enum.Enum):
     UNKNOWN = "UNKNOWN"
     SEASON_END = "SEASON_END"
 
+class SeriesApprovalStatus(enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+
 class Series(Base):
     __tablename__ = 'series'
     __table_args__ = {"schema": "man_review"}
@@ -28,6 +32,10 @@ class Series(Base):
     type = Column(SqlEnum(SeriesType), nullable=False)
     author = Column(String)
     artist = Column(String)
+    approval_status = Column(String, nullable=False, default=SeriesApprovalStatus.APPROVED.value)
+    submitted_by_id = Column(Integer, nullable=True)
+    approved_by_id = Column(Integer, nullable=True)
+    approved_at = Column(String, nullable=True)
 
     status = Column(
         SqlEnum(

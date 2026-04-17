@@ -10,6 +10,12 @@ class SeriesDetailOut(BaseModel):
     series_id: int
     synopsis: str
     series_cover_url: str
+    title: Optional[str] = None
+    genre: Optional[str] = None
+    type: Optional[str] = None
+    cover_url: Optional[str] = None
+    approval_status: Optional[str] = None
+    submitted_by_id: Optional[int] = None
 
     author: Optional[str] = None
     artist: Optional[str] = None

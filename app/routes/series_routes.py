@@ -1,22 +1,21 @@
 from decimal import Decimal
-from http.client import HTTPException
-from typing import List
+from typing import List, Optional
+from sqlalchemy import select, and_, or_
 
-from decimal import Decimal
-from typing import Optional
-from sqlalchemy import select
-
-from fastapi import APIRouter, UploadFile, File, Depends, Path
+from fastapi import APIRouter, UploadFile, File, Depends, Request
 from sqlalchemy import cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from app.database import AsyncSessionLocal, get_async_session
 from app.models.series_detail import SeriesDetail
-from app.models.series_model import Series, SeriesType, SeriesStatus
-from app.schemas.series_schemas import SeriesCreate, SeriesOut, SeriesUpdate, RankedSeriesOut
+from app.models.series_model import Series, SeriesType, SeriesStatus, SeriesApprovalStatus
+from app.models.user_model import User
+from app.schemas.series_schemas import SeriesCreate, SeriesOut, SeriesUpdate, RankedSeriesOut, PendingSeriesOut
 from app.s3 import upload_to_s3, delete_from_s3
 from urllib.parse import urlparse
 from fastapi import Query, HTTPException
+from app.deps.admin import require_admin, require_series_submitter
+from app.utils.token_utils import get_current_user
+from datetime import datetime, timezone
 
 
 
@@ -30,7 +29,11 @@ async def get_db():
         yield session
 
 @router.delete("/series/{series_id}", status_code=204)
-async def delete_series(series_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_series(
+    series_id: int,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
     # Fetch the series record
     result = await db.execute(select(Series).where(Series.id == series_id))
     series = result.scalar_one_or_none()
@@ -53,6 +56,7 @@ async def delete_series(series_id: int, db: AsyncSession = Depends(get_db)):
 async def create_series(
     series: SeriesCreate = Depends(SeriesCreate.as_form),
     cover: UploadFile = File(...),
+    current_user: User = Depends(require_series_submitter),
     db: AsyncSession = Depends(get_db)
 ):
     image_url = upload_to_s3(cover.file, cover.filename, cover.content_type, folder=series.title)
@@ -65,6 +69,10 @@ async def create_series(
         author=series.author,
         artist=series.artist,
         status=SeriesStatus(series.status.value) if series.status else None,
+        approval_status=SeriesApprovalStatus.PENDING.value,
+        submitted_by_id=current_user.id,
+        approved_by_id=None,
+        approved_at=None,
     )
 
     db.add(new_series)
@@ -75,7 +83,9 @@ async def create_series(
 
 @router.get("/series/", response_model=list[SeriesOut])
 async def list_series(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Series))
+    result = await db.execute(
+        select(Series).where(Series.approval_status == SeriesApprovalStatus.APPROVED.value)
+    )
     return result.scalars().all()
 
 
@@ -83,6 +93,7 @@ async def list_series(db: AsyncSession = Depends(get_db)):
 async def update_series(
     series_id: int,
     series_data: SeriesUpdate,
+    _admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_async_session)
 ):
     # 1) Load row
@@ -112,7 +123,133 @@ async def update_series(
     return series
 
 
-from typing import Optional
+@router.get("/series/pending", response_model=list[PendingSeriesOut])
+async def list_pending_series(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Series).where(Series.approval_status == SeriesApprovalStatus.PENDING.value).order_by(Series.id.desc())
+    )
+    rows = result.scalars().all()
+    detail_map = {}
+    if rows:
+        detail_result = await db.execute(
+            select(SeriesDetail.series_id, SeriesDetail.synopsis, SeriesDetail.series_cover_url).where(
+                SeriesDetail.series_id.in_([row.id for row in rows])
+            )
+        )
+        detail_map = {
+            series_id: bool((synopsis or "").strip() and (series_cover_url or "").strip())
+            for series_id, synopsis, series_cover_url in detail_result.all()
+        }
+
+    submitter_ids = {row.submitted_by_id for row in rows if row.submitted_by_id}
+    username_by_id = {}
+    if submitter_ids:
+        users_result = await db.execute(
+            select(User.id, User.username).where(User.id.in_(submitter_ids))
+        )
+        username_by_id = {uid: username for uid, username in users_result.all()}
+
+    payload = []
+    for row in rows:
+        payload.append({
+            "id": row.id,
+            "title": row.title,
+            "genre": row.genre,
+            "type": row.type,
+            "author": row.author,
+            "artist": row.artist,
+            "status": row.status,
+            "vote_count": row.vote_count or 0,
+            "cover_url": row.cover_url,
+            "approval_status": row.approval_status,
+            "submitted_by_id": row.submitted_by_id,
+            "submitted_by_username": username_by_id.get(row.submitted_by_id),
+            "approved_by_id": row.approved_by_id,
+            "approved_at": row.approved_at,
+            "detail_ready": detail_map.get(row.id, False),
+        })
+    return payload
+
+
+@router.get("/series/submissions/mine", response_model=list[PendingSeriesOut])
+async def list_my_submissions(
+    current_user: User = Depends(require_series_submitter),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Series)
+        .where(Series.submitted_by_id == current_user.id)
+        .order_by(Series.id.desc())
+    )
+    rows = result.scalars().all()
+    detail_map = {}
+    if rows:
+        detail_result = await db.execute(
+            select(SeriesDetail.series_id, SeriesDetail.synopsis, SeriesDetail.series_cover_url).where(
+                SeriesDetail.series_id.in_([row.id for row in rows])
+            )
+        )
+        detail_map = {
+            series_id: bool((synopsis or "").strip() and (series_cover_url or "").strip())
+            for series_id, synopsis, series_cover_url in detail_result.all()
+        }
+
+    payload = []
+    for row in rows:
+        payload.append({
+            "id": row.id,
+            "title": row.title,
+            "genre": row.genre,
+            "type": row.type,
+            "author": row.author,
+            "artist": row.artist,
+            "status": row.status,
+            "vote_count": row.vote_count or 0,
+            "cover_url": row.cover_url,
+            "approval_status": row.approval_status,
+            "submitted_by_id": row.submitted_by_id,
+            "submitted_by_username": current_user.username,
+            "approved_by_id": row.approved_by_id,
+            "approved_at": row.approved_at,
+            "detail_ready": detail_map.get(row.id, False),
+        })
+    return payload
+
+
+@router.post("/series/{series_id}/approve", response_model=SeriesOut)
+async def approve_series(
+    series_id: int,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Series).where(Series.id == series_id))
+    series = result.scalar_one_or_none()
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+    if series.approval_status == SeriesApprovalStatus.APPROVED.value:
+        return series
+
+    detail_result = await db.execute(
+        select(SeriesDetail).where(SeriesDetail.series_id == series_id)
+    )
+    detail = detail_result.scalar_one_or_none()
+    if not detail or not (detail.synopsis or "").strip() or not (detail.series_cover_url or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Title details must be completed before approval"
+        )
+
+    series.approval_status = SeriesApprovalStatus.APPROVED.value
+    series.approved_by_id = admin_user.id
+    series.approved_at = datetime.now(timezone.utc).isoformat()
+
+    await db.commit()
+    await db.refresh(series)
+    return series
+
 
 @router.get("/series/rankings", response_model=List[RankedSeriesOut])
 async def get_ranked_series(
@@ -123,7 +260,7 @@ async def get_ranked_series(
 ):
     stmt = select(Series, SeriesDetail).join(
         SeriesDetail, Series.id == SeriesDetail.series_id, isouter=True
-    )
+    ).where(Series.approval_status == SeriesApprovalStatus.APPROVED.value)
 
     if type:
         stmt = stmt.where(Series.type == type.upper())
@@ -189,14 +326,38 @@ async def get_ranked_series(
 @router.get("/series/summary/{series_id}", response_model=RankedSeriesOut)
 async def get_series_summary(
     series_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    # join Series + SeriesDetail (same as /series/rankings)
     stmt = select(Series, SeriesDetail).join(
         SeriesDetail, Series.id == SeriesDetail.series_id, isouter=True
-    )
+    ).where(Series.id == series_id)
     result = await db.execute(stmt)
     rows = result.all()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    series_row, _ = rows[0]
+    current_user = None
+    token = request.headers.get("authorization", "").replace("Bearer ", "")
+    if token:
+        try:
+            current_user = await get_current_user(token=token, session=db)
+        except Exception:
+            current_user = None
+
+    can_view_pending = bool(
+        current_user and (
+            current_user.id == series_row.submitted_by_id
+            or (current_user.role or "").upper() == "ADMIN"
+        )
+    )
+    if (
+        series_row.approval_status != SeriesApprovalStatus.APPROVED.value
+        and not can_view_pending
+    ):
+        raise HTTPException(status_code=404, detail="Series not found")
 
     def safe_avg(total, count):
         return total / count if count else 0
@@ -251,12 +412,17 @@ async def search_series(
     stmt = select(Series, SeriesDetail).join(
         SeriesDetail, Series.id == SeriesDetail.series_id, isouter=True
     ).where(
-        (Series.title.ilike(f"%{query}%")) |
-        (Series.genre.ilike(f"%{query}%")) |
-        (cast(Series.type, String).ilike(f"%{query}%")) |
-        (Series.author.ilike(f"%{query}%")) |
-        (Series.artist.ilike(f"%{query}%")) |
-        (cast(Series.status, String).ilike(f"%{query}%"))
+        and_(
+            Series.approval_status == SeriesApprovalStatus.APPROVED.value,
+            or_(
+                Series.title.ilike(f"%{query}%"),
+                Series.genre.ilike(f"%{query}%"),
+                cast(Series.type, String).ilike(f"%{query}%"),
+                Series.author.ilike(f"%{query}%"),
+                Series.artist.ilike(f"%{query}%"),
+                cast(Series.status, String).ilike(f"%{query}%"),
+            ),
+        )
     )
 
     result = await db.execute(stmt)

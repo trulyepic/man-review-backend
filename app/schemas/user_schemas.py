@@ -20,6 +20,13 @@ class UserOut(BaseModel):
     username: str
     role: str
 
+class UserAdminOut(UserOut):
+    email: Optional[EmailStr] = None
+    is_verified: bool
+
+class UserRoleUpdate(BaseModel):
+    role: str
+
 class SignupResponse(BaseModel):
     message: str
     token: str
