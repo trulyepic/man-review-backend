@@ -224,7 +224,7 @@ async def get_series_detail(
     response_data["artist"] = series.artist
     response_data["title"] = series.title
     response_data["genre"] = series.genre
-    response_data["type"] = series.type
+    response_data["type"] = series.type.value if getattr(series, "type", None) else None
     response_data["cover_url"] = series.cover_url
     response_data["approval_status"] = series.approval_status
     response_data["submitted_by_id"] = series.submitted_by_id
