@@ -6,7 +6,7 @@ from app.database import AsyncSessionLocal
 from app.email_service import send_verification_email
 from app.limiter import limiter
 from app.models.user_model import User
-from app.schemas.user_schemas import UserCreate, UserOut, SignupResponse, UserLogin, ResendVerification
+from app.schemas.user_schemas import UserCreate, UserOut, SignupResponse, UserLogin, ResendVerification, UserAdminOut, UserRoleUpdate
 from sqlalchemy.future import select
 from passlib.hash import bcrypt
 from fastapi.responses import JSONResponse
@@ -20,6 +20,7 @@ from google.auth.transport import requests
 from datetime import datetime, timezone
 import os
 from jose import JWTError
+from app.deps.admin import require_admin
 
 router = APIRouter()
 
@@ -32,7 +33,7 @@ async def get_db():
 @router.post("/signup", response_model=SignupResponse)
 @limiter.limit("5/minute")
 async def signup(request: Request, user: UserCreate, db: AsyncSession = Depends(get_db)):
-    await verify_captcha(user.captcha_token)
+    await verify_captcha(user.captcha_token, request=request)
 
     username_norm = user.username.strip()
     email_norm = str(user.email).strip().lower()
@@ -157,7 +158,7 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
 @limiter.limit("5/minute")
 async def login(request: Request, user: UserLogin, db: AsyncSession = Depends(get_db)):
     try:
-        await verify_captcha(user.captcha_token)
+        await verify_captcha(user.captcha_token, request=request)
     except HTTPException as he:
         # Keep this: shows exact captcha failure reason from verify_captcha
         print(f"[LOGIN] Captcha verification failed -> {he.detail}")
@@ -246,7 +247,7 @@ async def resend_verification(
     # (Optional) require CAPTCHA; flip this on if you get abuse
     if payload.captcha_token:
         try:
-            await verify_captcha(payload.captcha_token)
+            await verify_captcha(payload.captcha_token, request=request)
         except Exception:
             # Don’t reveal granularity; generic message prevents probing
             return {"message": "If an account exists, a new verification link has been sent."}
@@ -278,3 +279,34 @@ async def resend_verification(
         return {"message": "If an account exists, a new verification link has been sent."}
 
     return {"message": "Verification email sent. Please check your inbox."}
+
+
+@router.get("/users", response_model=list[UserAdminOut])
+async def list_users_for_admin(
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).order_by(User.username.asc()))
+    return result.scalars().all()
+
+
+@router.patch("/users/{user_id}/role", response_model=UserAdminOut)
+async def update_user_role(
+    user_id: int,
+    payload: UserRoleUpdate,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    allowed_roles = {"GENERAL", "CONTRIBUTOR", "ADMIN"}
+    next_role = (payload.role or "").strip().upper()
+    if next_role not in allowed_roles:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.role = next_role
+    await db.commit()
+    await db.refresh(user)
+    return user

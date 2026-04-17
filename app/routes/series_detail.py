@@ -12,6 +12,8 @@ from app.models.user_vote import UserVote
 from app.utils.token_utils import get_current_user
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
+from app.deps.admin import require_admin, is_admin, can_submit_series
+from app.models.series_model import SeriesApprovalStatus
 
 router = APIRouter(prefix="/series-details", tags=["Series Details"])
 
@@ -20,11 +22,20 @@ async def create_or_update_series_detail(
     series_id: int = Form(...),
     synopsis: str = Form(...),
     file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session)
 ):
     series = await session.get(Series, series_id)
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
+
+    is_owner_of_pending = (
+        can_submit_series(current_user)
+        and series.submitted_by_id == current_user.id
+        and series.approval_status != SeriesApprovalStatus.APPROVED.value
+    )
+    if not (is_admin(current_user) or is_owner_of_pending):
+        raise HTTPException(status_code=403, detail="You cannot edit details for this title")
 
     # Upload image to S3
     file.file.seek(0)  # Make sure pointer is at start
@@ -72,6 +83,12 @@ async def vote_series_detail(
     if category not in valid_categories or not (1 <= score <= 10):
         raise HTTPException(status_code=400, detail="Invalid vote")
 
+    series = await session.get(Series, series_id)
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+    if series.approval_status != SeriesApprovalStatus.APPROVED.value:
+        raise HTTPException(status_code=404, detail="Series detail not found")
+
     detail = await session.scalar(
         select(SeriesDetail).where(SeriesDetail.series_id == series_id)
     )
@@ -105,7 +122,6 @@ async def vote_series_detail(
 
     # ✅ Increment only on first vote
     if not has_prior_votes:
-        series = await session.get(Series, series_id)
         series.vote_count = (series.vote_count or 0) + 1
 
     # 🗳️ Save this vote
@@ -164,6 +180,13 @@ async def get_series_detail(
         except:
             pass
 
+    is_submitter = bool(user and series.submitted_by_id == user.id)
+    if (
+        series.approval_status != SeriesApprovalStatus.APPROVED.value
+        and not (user and (is_admin(user) or is_submitter))
+    ):
+        raise HTTPException(status_code=404, detail="Series not found")
+
     CATEGORY_LABELS = {
         "Story": "Story",
         "Characters": "Characters",
@@ -199,6 +222,12 @@ async def get_series_detail(
     response_data["vote_counts"] = vote_counts
     response_data["author"] = series.author
     response_data["artist"] = series.artist
+    response_data["title"] = series.title
+    response_data["genre"] = series.genre
+    response_data["type"] = series.type
+    response_data["cover_url"] = series.cover_url
+    response_data["approval_status"] = series.approval_status
+    response_data["submitted_by_id"] = series.submitted_by_id
 
     return JSONResponse(content=response_data)
 

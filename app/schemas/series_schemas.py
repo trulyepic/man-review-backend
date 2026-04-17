@@ -51,6 +51,7 @@ class SeriesOut(SeriesCreate):
     id: int
     vote_count: int
     cover_url: str
+    approval_status: Optional[str] = None
 
     model_config = {
         "from_attributes": True
@@ -63,4 +64,11 @@ class RankedSeriesOut(SeriesOut):
     model_config = {
         "from_attributes": True
     }
+
+class PendingSeriesOut(SeriesOut):
+    submitted_by_id: Optional[int] = None
+    submitted_by_username: Optional[str] = None
+    approved_by_id: Optional[int] = None
+    approved_at: Optional[str] = None
+    detail_ready: bool = False
 

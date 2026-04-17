@@ -85,6 +85,47 @@ async def on_startup():
                         """
                     )
                 )
+                await conn.execute(
+                    text(
+                        """
+                        ALTER TABLE IF EXISTS man_review.series
+                        ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)
+                        """
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """
+                        ALTER TABLE IF EXISTS man_review.series
+                        ADD COLUMN IF NOT EXISTS submitted_by_id INTEGER
+                        """
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """
+                        ALTER TABLE IF EXISTS man_review.series
+                        ADD COLUMN IF NOT EXISTS approved_by_id INTEGER
+                        """
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """
+                        ALTER TABLE IF EXISTS man_review.series
+                        ADD COLUMN IF NOT EXISTS approved_at VARCHAR(40)
+                        """
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """
+                        UPDATE man_review.series
+                        SET approval_status = 'APPROVED'
+                        WHERE approval_status IS NULL
+                        """
+                    )
+                )
             break  # success
         except Exception as e:
             if attempt == 0:
