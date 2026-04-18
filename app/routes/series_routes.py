@@ -2,18 +2,18 @@ from decimal import Decimal
 from typing import List, Optional
 from sqlalchemy import select, and_, or_
 
-from fastapi import APIRouter, UploadFile, File, Depends, Request
+from fastapi import APIRouter, UploadFile, File, Depends, Request, Form
 from sqlalchemy import cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal, get_async_session
 from app.models.series_detail import SeriesDetail
 from app.models.series_model import Series, SeriesType, SeriesStatus, SeriesApprovalStatus
 from app.models.user_model import User
-from app.schemas.series_schemas import SeriesCreate, SeriesOut, SeriesUpdate, RankedSeriesOut, PendingSeriesOut
+from app.schemas.series_schemas import SeriesCreate, SeriesOut, RankedSeriesOut, PendingSeriesOut
 from app.s3 import upload_to_s3, delete_from_s3
 from urllib.parse import urlparse
 from fastapi import Query, HTTPException
-from app.deps.admin import require_admin, require_series_submitter
+from app.deps.admin import require_admin, require_series_submitter, can_submit_series, is_admin
 from app.utils.token_utils import get_current_user
 from datetime import datetime, timezone
 
@@ -92,8 +92,14 @@ async def list_series(db: AsyncSession = Depends(get_db)):
 @router.put("/series/{series_id}", response_model=SeriesOut)
 async def update_series(
     series_id: int,
-    series_data: SeriesUpdate,
-    _admin: User = Depends(require_admin),
+    title: Optional[str] = Form(None),
+    genre: Optional[str] = Form(None),
+    type: Optional[SeriesType] = Form(None),
+    author: Optional[str] = Form(None),
+    artist: Optional[str] = Form(None),
+    status: Optional[SeriesStatus] = Form(None),
+    cover: Optional[UploadFile] = File(None),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session)
 ):
     # 1) Load row
@@ -102,22 +108,43 @@ async def update_series(
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
 
-    # 2) Build payload and convert strings -> Python Enums
-    payload = series_data.dict(exclude_unset=True)
+    is_owner_of_pending = (
+        can_submit_series(current_user)
+        and series.submitted_by_id == current_user.id
+        and series.approval_status != SeriesApprovalStatus.APPROVED.value
+    )
+    if not (is_admin(current_user) or is_owner_of_pending):
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot edit this title"
+        )
 
-    if "type" in payload and payload["type"] is not None:
-        # payload["type"] is like "MANGA" | "MANHWA" | "MANHUA"
-        payload["type"] = SeriesType[payload["type"]]
+    payload = {
+        "title": title,
+        "genre": genre,
+        "type": type,
+        "author": author,
+        "artist": artist,
+        "status": status,
+    }
 
-    if "status" in payload and payload["status"] is not None:
-        # payload["status"] is like "ONGOING" | "COMPLETE" | "HIATUS" | "UNKNOWN"
-        payload["status"] = SeriesStatus[payload["status"]]
-
-    # 3) Apply updates
     for field, value in payload.items():
-        setattr(series, field, value)
+        if value is not None:
+            setattr(series, field, value)
 
-    # 4) Save
+    if cover is not None and cover.filename:
+        if series.cover_url:
+            try:
+                delete_from_s3(extract_s3_key(series.cover_url))
+            except Exception as exc:
+                print(f"Warning: Failed to delete old series cover from S3: {exc}")
+        series.cover_url = upload_to_s3(
+            cover.file,
+            cover.filename,
+            cover.content_type,
+            folder=series.title or str(series.id),
+        )
+
     await session.commit()
     await session.refresh(series)
     return series
