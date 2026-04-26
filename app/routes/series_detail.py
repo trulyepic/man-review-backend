@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +23,7 @@ router = APIRouter(prefix="/series-details", tags=["Series Details"])
 async def create_or_update_series_detail(
     series_id: int = Form(...),
     synopsis: str = Form(...),
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -37,20 +39,31 @@ async def create_or_update_series_detail(
     if not (is_admin(current_user) or is_owner_of_pending):
         raise HTTPException(status_code=403, detail="You cannot edit details for this title")
 
-    # Upload image to S3
-    file.file.seek(0)  # Make sure pointer is at start
-    file_url = upload_to_s3(file.file, file.filename, file.content_type, folder=f"{series_id}/covers")
-
     # Check if detail already exists
     result = await session.execute(select(SeriesDetail).where(SeriesDetail.series_id == series_id))
     detail = result.scalars().first()
 
     if detail:
-        # Update existing
         detail.synopsis = synopsis
-        detail.series_cover_url = file_url
+        if file:
+            file.file.seek(0)
+            file_url = upload_to_s3(
+                file.file,
+                file.filename,
+                file.content_type,
+                folder=f"{series_id}/covers"
+            )
+            detail.series_cover_url = file_url
     else:
-        # Create new
+        if not file:
+            raise HTTPException(status_code=400, detail="Detail cover image is required")
+        file.file.seek(0)
+        file_url = upload_to_s3(
+            file.file,
+            file.filename,
+            file.content_type,
+            folder=f"{series_id}/covers"
+        )
         detail = SeriesDetail(
             series_id=series_id,
             synopsis=synopsis,

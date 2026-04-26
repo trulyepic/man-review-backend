@@ -356,16 +356,16 @@ async def get_series_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Series, SeriesDetail).join(
+    target_stmt = select(Series, SeriesDetail).join(
         SeriesDetail, Series.id == SeriesDetail.series_id, isouter=True
     ).where(Series.id == series_id)
-    result = await db.execute(stmt)
-    rows = result.all()
+    target_result = await db.execute(target_stmt)
+    target_row = target_result.first()
 
-    if not rows:
+    if not target_row:
         raise HTTPException(status_code=404, detail="Series not found")
 
-    series_row, _ = rows[0]
+    series_row, target_detail = target_row
     current_user = None
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     if token:
@@ -389,9 +389,14 @@ async def get_series_summary(
     def safe_avg(total, count):
         return total / count if count else 0
 
-    # build the same list as /series/rankings
+    approved_stmt = select(Series, SeriesDetail).join(
+        SeriesDetail, Series.id == SeriesDetail.series_id, isouter=True
+    ).where(Series.approval_status == SeriesApprovalStatus.APPROVED.value)
+    approved_result = await db.execute(approved_stmt)
+    approved_rows = approved_result.all()
+
     ranked_series = []
-    for s, d in rows:
+    for s, d in approved_rows:
         if d:
             story = safe_avg(d.story_total, d.story_count)
             chars = safe_avg(d.characters_total, d.characters_count)
@@ -426,10 +431,35 @@ async def get_series_summary(
 
     combined = ranked + unranked
     item = next((x for x in combined if x["id"] == series_id), None)
-    if not item:
+    if item:
+        return item
+
+    if series_row.approval_status == SeriesApprovalStatus.APPROVED.value:
         raise HTTPException(status_code=404, detail="Series not found")
 
-    return item
+    if target_detail:
+        story = safe_avg(target_detail.story_total, target_detail.story_count)
+        chars = safe_avg(target_detail.characters_total, target_detail.characters_count)
+        world = safe_avg(target_detail.worldbuilding_total, target_detail.worldbuilding_count)
+        art = safe_avg(target_detail.art_total, target_detail.art_count)
+        drama = safe_avg(target_detail.drama_or_fight_total, target_detail.drama_or_fight_count)
+        final_score = Decimal((story + chars + world + art + drama) / 5)
+    else:
+        final_score = 0.0
+
+    return {
+        "id": series_row.id,
+        "title": series_row.title,
+        "genre": series_row.genre,
+        "type": series_row.type,
+        "author": series_row.author,
+        "artist": series_row.artist,
+        "cover_url": series_row.cover_url,
+        "vote_count": series_row.vote_count or 0,
+        "final_score": final_score,
+        "status": series_row.status.name if series_row.status else None,
+        "rank": None,
+    }
 
 @router.get("/series/search", response_model=List[RankedSeriesOut])
 async def search_series(
