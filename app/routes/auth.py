@@ -19,6 +19,9 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 from datetime import datetime, timezone
 import os
+import json
+from urllib.parse import urlencode
+from urllib.request import urlopen
 from jose import JWTError
 from app.deps.admin import require_admin
 
@@ -118,8 +121,26 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Missing token")
 
     try:
-        id_info = id_token.verify_oauth2_token(token, requests.Request(), os.getenv("GOOGLE_CLIENT_ID"))
+        google_client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+        id_info = id_token.verify_oauth2_token(token, requests.Request(), google_client_id)
+    except Exception as verify_err:
+        print(f"[google-oauth] verify_oauth2_token failed: {verify_err!r}")
+        try:
+            qs = urlencode({"id_token": token})
+            with urlopen(f"https://oauth2.googleapis.com/tokeninfo?{qs}", timeout=10) as resp:
+                id_info = json.loads(resp.read().decode("utf-8"))
 
+            if id_info.get("aud") != google_client_id:
+                raise HTTPException(status_code=401, detail="Invalid Google token")
+            if id_info.get("email_verified") not in ("true", True):
+                raise HTTPException(status_code=401, detail="Google email is not verified")
+        except HTTPException:
+            raise
+        except Exception as fallback_err:
+            print(f"[google-oauth] tokeninfo fallback failed: {fallback_err!r}")
+            raise HTTPException(status_code=401, detail="Invalid Google token")
+
+    try:
         email = id_info["email"].strip().lower()
         username = id_info.get("name", email.split("@")[0]).strip()
 
@@ -147,7 +168,6 @@ async def google_oauth(payload: dict, db: AsyncSession = Depends(get_db)):
             "access_token": access_token,
             "user": {"id": user.id, "username": user.username, "role": user.role},
         }
-
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid Google token")
 

@@ -17,6 +17,7 @@ class SeriesStatus(enum.Enum):
     SEASON_END = "SEASON_END"
 
 class SeriesApprovalStatus(enum.Enum):
+    DRAFT = "DRAFT"
     PENDING = "PENDING"
     APPROVED = "APPROVED"
 
