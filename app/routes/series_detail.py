@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from app.deps.admin import require_admin, is_admin, can_submit_series
 from app.models.series_model import SeriesApprovalStatus
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/series-details", tags=["Series Details"])
 
@@ -72,6 +73,16 @@ async def create_or_update_series_detail(
         session.add(detail)
 
     await session.commit()
+    detail_complete = bool((detail.synopsis or "").strip() and (detail.series_cover_url or "").strip())
+    if detail_complete and series.approval_status == SeriesApprovalStatus.DRAFT.value:
+        if is_admin(current_user) and series.submitted_by_id == current_user.id:
+            series.approval_status = SeriesApprovalStatus.APPROVED.value
+            series.approved_by_id = current_user.id
+            series.approved_at = datetime.now(timezone.utc).isoformat()
+            await session.commit()
+        elif is_owner_of_pending:
+            series.approval_status = SeriesApprovalStatus.PENDING.value
+            await session.commit()
     await session.refresh(detail)
     return detail
 

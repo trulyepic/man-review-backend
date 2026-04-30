@@ -1,6 +1,6 @@
 from decimal import Decimal
 from typing import List, Optional
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, delete
 
 from fastapi import APIRouter, UploadFile, File, Depends, Request, Form
 from sqlalchemy import cast, String
@@ -9,6 +9,7 @@ from app.database import AsyncSessionLocal, get_async_session
 from app.models.series_detail import SeriesDetail
 from app.models.series_model import Series, SeriesType, SeriesStatus, SeriesApprovalStatus
 from app.models.user_model import User
+from app.models.user_vote import UserVote
 from app.schemas.series_schemas import SeriesCreate, SeriesOut, RankedSeriesOut, PendingSeriesOut
 from app.s3 import upload_to_s3, delete_from_s3
 from urllib.parse import urlparse
@@ -49,6 +50,17 @@ async def delete_series(
         except Exception as e:
             print(f"Warning: Failed to delete image from S3: {e}")
 
+    detail_result = await db.execute(select(SeriesDetail).where(SeriesDetail.series_id == series_id))
+    detail = detail_result.scalar_one_or_none()
+    if detail and detail.series_cover_url:
+        try:
+            detail_key = extract_s3_key(detail.series_cover_url)
+            delete_from_s3(detail_key)
+        except Exception as e:
+            print(f"Warning: Failed to delete detail image from S3: {e}")
+
+    await db.execute(delete(UserVote).where(UserVote.series_id == series_id))
+
     await db.delete(series)
     await db.commit()
 
@@ -69,7 +81,7 @@ async def create_series(
         author=series.author,
         artist=series.artist,
         status=SeriesStatus(series.status.value) if series.status else None,
-        approval_status=SeriesApprovalStatus.PENDING.value,
+        approval_status=SeriesApprovalStatus.DRAFT.value,
         submitted_by_id=current_user.id,
         approved_by_id=None,
         approved_at=None,
