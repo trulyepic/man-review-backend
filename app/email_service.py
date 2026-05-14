@@ -14,7 +14,7 @@ FROM_EMAIL = os.getenv("FROM_EMAIL")
 
 
 def send_verification_email(to_email: str, token: str):
-    verify_url = f"https://toonranks.com/verify-email?token={token}"  # update to prod later
+    verify_url = f"https://www.toonranks.com/verify-email?token={token}"
     subject = "Toon Ranks --> Verify your email address"
     text = f"""
     Hi Ranker,

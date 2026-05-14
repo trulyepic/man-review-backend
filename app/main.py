@@ -32,7 +32,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         content={"detail": "Too many requests. Please slow down."}
     )
 
-# 🚨 Redirect www.toonranks.com → toonranks.com
+# Redirect bare toonranks.com -> www.toonranks.com for canonical consistency.
 @app.middleware("http")
 async def redirect_www(request: Request, call_next):
     host = request.headers.get("host", "")
@@ -42,9 +42,8 @@ async def redirect_www(request: Request, call_next):
     if path.startswith("/sitemap") or path.startswith("/sitemaps/"):
         return await call_next(request)
 
-    if host.startswith("www."):
-        # Remove www. and redirect
-        new_url = request.url.replace(netloc=host.replace("www.", ""))
+    if host == "toonranks.com":
+        new_url = request.url.replace(netloc="www.toonranks.com")
         return RedirectResponse(str(new_url), status_code=301)
     return await call_next(request)
 

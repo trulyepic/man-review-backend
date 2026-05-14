@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_async_session
 from app.models.forum_model import ForumThread  # id, updated_at, last_post_at
+from app.models.series_model import Series, SeriesApprovalStatus
 
 router = APIRouter(tags=["Sitemaps"])
 
 # --- Config ---
-PUBLIC_ORIGIN = os.getenv("PUBLIC_ORIGIN", "https://toonranks.com").rstrip("/")
+PUBLIC_ORIGIN = os.getenv("PUBLIC_ORIGIN", "https://www.toonranks.com").rstrip("/")
 URLS_PER_SITEMAP = int(os.getenv("SITEMAP_URLS_PER_FILE", "50000"))
 
 STATIC_SITEMAP_URL = f"{PUBLIC_ORIGIN}/sitemap-static.xml"
@@ -27,10 +28,15 @@ CACHE_HEADERS = {
 }
 
 
-def _fmt_lastmod(d: datetime | None) -> str:
+def _fmt_lastmod(d: datetime | str | None) -> str:
     """Return a sitemap-safe date (YYYY-MM-DD)."""
     if not d:
         return datetime.now(timezone.utc).date().isoformat()
+    if isinstance(d, str):
+        try:
+            d = datetime.fromisoformat(d.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.now(timezone.utc).date().isoformat()
     if d.tzinfo is None:
         d = d.replace(tzinfo=timezone.utc)
     return d.date().isoformat()
@@ -38,6 +44,10 @@ def _fmt_lastmod(d: datetime | None) -> str:
 
 def _thread_loc(thread_id: int) -> str:
     return f"{PUBLIC_ORIGIN}/forum/{thread_id}"
+
+
+def _series_loc(series_id: int) -> str:
+    return f"{PUBLIC_ORIGIN}/series/{series_id}"
 
 
 def _render_urlset(urls: List[Tuple[str, str]]) -> str:
@@ -75,6 +85,7 @@ async def sitemap_index(session: AsyncSession = Depends(get_async_session)) -> R
     """
     Sitemap index:
       - /sitemap-static.xml  (your fixed pages)
+      - /sitemaps/series-1.xml, /sitemaps/series-2.xml, ...
       - /sitemaps/forum-1.xml, /sitemaps/forum-2.xml, ...
     Includes <lastmod> on each <sitemap>.
     """
@@ -83,10 +94,28 @@ async def sitemap_index(session: AsyncSession = Depends(get_async_session)) -> R
     latest_forum_activity = await session.scalar(
         select(func.max(func.coalesce(ForumThread.last_post_at, ForumThread.updated_at)))
     )
+    total_series = await session.scalar(
+        select(func.count(Series.id)).where(
+            Series.approval_status == SeriesApprovalStatus.APPROVED.value
+        )
+    ) or 0
+    latest_series_activity = await session.scalar(
+        select(func.max(Series.approved_at)).where(
+            Series.approval_status == SeriesApprovalStatus.APPROVED.value
+        )
+    )
 
     sitemaps: List[Tuple[str, str]] = [
         (STATIC_SITEMAP_URL, _fmt_lastmod(datetime.now(timezone.utc)))
     ]
+
+    if total_series > 0:
+        num_files = math.ceil(total_series / URLS_PER_SITEMAP)
+        series_lastmod = _fmt_lastmod(latest_series_activity)
+        sitemaps.extend(
+            (f"{PUBLIC_ORIGIN}/sitemaps/series-{i}.xml", series_lastmod)
+            for i in range(1, num_files + 1)
+        )
 
     if total_threads > 0:
         num_files = math.ceil(total_threads / URLS_PER_SITEMAP)
@@ -97,6 +126,41 @@ async def sitemap_index(session: AsyncSession = Depends(get_async_session)) -> R
         )
 
     xml = _render_sitemap_index(sitemaps)
+    return Response(content=xml, media_type="application/xml", headers=CACHE_HEADERS)
+
+
+@router.get("/sitemaps/series-{page:int}.xml", include_in_schema=False)
+async def series_sitemap_page(
+    page: int, session: AsyncSession = Depends(get_async_session)
+) -> Response:
+    """One paginated sitemap of approved series detail pages."""
+    if page < 1:
+        return Response(status_code=404)
+
+    approved_filter = Series.approval_status == SeriesApprovalStatus.APPROVED.value
+    total_series = await session.scalar(
+        select(func.count(Series.id)).where(approved_filter)
+    ) or 0
+    max_page = max(1, math.ceil(total_series / URLS_PER_SITEMAP)) if total_series else 0
+    if page > max_page:
+        return Response(status_code=404)
+
+    offset = (page - 1) * URLS_PER_SITEMAP
+
+    stmt = (
+        select(Series.id.label("id"), Series.approved_at.label("lastmod"))
+        .where(approved_filter)
+        .order_by(Series.id.asc())
+        .limit(URLS_PER_SITEMAP)
+        .offset(offset)
+    )
+
+    rows = (await session.execute(stmt)).all()
+    if not rows:
+        return Response(status_code=404)
+
+    urls = [(_series_loc(r.id), _fmt_lastmod(r.lastmod)) for r in rows]
+    xml = _render_urlset(urls)
     return Response(content=xml, media_type="application/xml", headers=CACHE_HEADERS)
 
 
@@ -156,6 +220,8 @@ _STATIC_URLSET = f"""<?xml version="1.0" encoding="UTF-8"?>
   <url><loc>{PUBLIC_ORIGIN}/contact</loc><lastmod>{today}</lastmod></url>
   <url><loc>{PUBLIC_ORIGIN}/about</loc><lastmod>{today}</lastmod></url>
   <url><loc>{PUBLIC_ORIGIN}/how-rankings-work</loc><lastmod>{today}</lastmod></url>
+  <url><loc>{PUBLIC_ORIGIN}/terms</loc><lastmod>{today}</lastmod></url>
+  <url><loc>{PUBLIC_ORIGIN}/privacy</loc><lastmod>{today}</lastmod></url>
 </urlset>
 """.strip()
 
