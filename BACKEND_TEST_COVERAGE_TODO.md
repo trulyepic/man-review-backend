@@ -15,9 +15,9 @@ Suggested branch: `backend-tests-phase-1-utilities`
 
 Suggested branch: `backend-tests-phase-2-public-routes`
 
-- [ ] Add tests for `/health`.
-- [ ] Add public sitemap route tests with mocked database/session behavior.
-- [ ] Add public series route tests where response behavior can be tested without production data.
+- [x] Add tests for `/health`.
+- [x] Add public sitemap route tests with mocked database/session behavior.
+- [x] Add public series route tests where response behavior can be tested without production data.
 
 ## Phase 3: Auth And Security Helpers
 
@@ -49,5 +49,5 @@ Suggested branch: `backend-tests-phase-5-db-integration`
 ## Later
 
 - [ ] Add coverage reporting once tests cover meaningful behavior.
-- [ ] Consider JUnit test reports in GitHub Actions for more clickable test summaries.
+- [ ] Add JUnit pytest reports and upload them in GitHub Actions for clearer per-test failure summaries.
 - [ ] Add regression tests when production bugs are found.
