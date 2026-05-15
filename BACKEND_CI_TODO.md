@@ -34,12 +34,12 @@ Suggested branch: `backend-ci-phase-2-lint-format`
 
 Suggested branch: `backend-ci-phase-3-github-actions`
 
-- [ ] Add `.github/workflows/backend-ci.yml`.
-- [ ] Run on pull requests to `main`.
-- [ ] Run on pushes to `main`.
-- [ ] Use a current Python version compatible with Railway.
-- [ ] Install dependencies from `requirements.txt`.
-- [ ] Run lint, tests/import checks, and any syntax checks as separate jobs where useful.
+- [x] Add `.github/workflows/backend-ci.yml`.
+- [x] Run on pull requests to `main`.
+- [x] Run on pushes to `main`.
+- [x] Use a current Python version compatible with Railway.
+- [x] Install dependencies from `requirements.txt`.
+- [x] Run lint, tests/import checks, and any syntax checks as separate jobs where useful.
 
 ## Phase 4: Branch Protection Setup
 
