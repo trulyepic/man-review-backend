@@ -1,0 +1,23 @@
+name: Railway Deployment Status
+
+on:
+  deployment_status:
+
+jobs:
+  railway-deployment:
+    name: Railway deployment
+    runs-on: ubuntu-latest
+    if: github.event.deployment.ref == 'main'
+
+    steps:
+      - name: Show Railway deployment status
+        run: |
+          echo "Ref: ${{ github.event.deployment.ref }}"
+          echo "Environment: ${{ github.event.deployment_status.environment }}"
+          echo "State: ${{ github.event.deployment_status.state }}"
+          echo "Description: ${{ github.event.deployment_status.description }}"
+          echo "Deployment URL: ${{ github.event.deployment_status.target_url }}"
+
+      - name: Fail on unsuccessful Railway deployment
+        if: github.event.deployment_status.state == 'failure' || github.event.deployment_status.state == 'error'
+        run: exit 1
