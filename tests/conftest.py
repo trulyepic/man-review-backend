@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 
 def pytest_configure():
     os.environ.setdefault(
@@ -12,3 +14,8 @@ def pytest_configure():
     os.environ.setdefault("AWS_REGION", "us-west-1")
     os.environ.setdefault("AWS_BUCKET_NAME", "toonranks-test")
     os.environ.setdefault("PUBLIC_ORIGIN", "https://www.toonranks.com")
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
