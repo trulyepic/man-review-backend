@@ -11,10 +11,10 @@ def test_contains_profanity_does_not_match_inside_larger_words():
     assert contains_profanity("Classic titles are welcome.") is None
 
 
-def test_ensure_clean_allows_clean_text():
+def test_ensure_clean_allows_text_without_blocked_words():
     ensure_clean("A thoughtful reply about a new chapter.")
 
 
-def test_ensure_clean_raises_for_blocked_word():
+def test_ensure_clean_raises_for_text_with_blocked_word():
     with pytest.raises(ValueError, match="inappropriate language"):
         ensure_clean("This is shit.")

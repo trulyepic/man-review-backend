@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from app.utils import forum_content
 
 
-def test_reject_disallowed_images_accepts_https_markdown_image(monkeypatch):
+def test_reject_disallowed_images_accepts_https_markdown_image_url(monkeypatch):
     checked_urls = []
 
     def fake_head_check(url: str) -> None:
@@ -17,7 +17,7 @@ def test_reject_disallowed_images_accepts_https_markdown_image(monkeypatch):
     assert checked_urls == ["https://cdn.example.com/cover.webp"]
 
 
-def test_reject_disallowed_images_normalizes_protocol_relative_urls(monkeypatch):
+def test_reject_disallowed_images_normalizes_protocol_relative_image_url(monkeypatch):
     checked_urls = []
 
     def fake_head_check(url: str) -> None:
