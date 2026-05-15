@@ -23,16 +23,17 @@ Suggested branch: `backend-tests-phase-2-public-routes`
 
 Suggested branch: `backend-tests-phase-3-auth-security`
 
-- [ ] Add password hashing/login helper tests where practical.
-- [ ] Add email token tests.
-- [ ] Add captcha helper tests with mocked network responses.
-- [ ] Add admin dependency tests.
+- [x] Add password hashing/login helper tests where practical.
+- [x] Add email token tests.
+- [x] Add captcha helper tests with mocked network responses.
+- [x] Add admin dependency tests.
 
 ## Phase 4: Route Tests With Mocked Dependencies
 
 Suggested branch: `backend-tests-phase-4-route-mocks`
 
 - [ ] Add route tests for reading lists with mocked sessions.
+- [ ] Add route tests for signup/login password behavior with mocked sessions.
 - [ ] Add route tests for issues with mocked sessions.
 - [ ] Add route tests for forum behavior with mocked sessions.
 - [ ] Add route tests for media validation without touching S3.
