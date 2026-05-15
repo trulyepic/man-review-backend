@@ -14,11 +14,11 @@ This checklist mirrors the frontend rollout: small branches, one clear improveme
 
 Suggested branch: `backend-ci-phase-1-health-baseline`
 
-- [ ] Add a minimal backend health/import check that can run without a live database.
-- [ ] Add `pytest` and a basic test layout if it is not already available.
-- [ ] Add first smoke tests for stable public endpoints or app creation.
-- [ ] Confirm the backend can be imported in CI without requiring production secrets.
-- [ ] Document which environment variables are required only at runtime.
+- [x] Add a minimal backend health/import check that can run without a live database.
+- [x] Add `pytest` and a basic test layout if it is not already available.
+- [x] Add first smoke tests for stable public endpoints or app creation.
+- [x] Confirm the backend can be imported in CI without requiring production secrets.
+- [x] Document which environment variables are required only at runtime.
 
 ## Phase 2: Lint And Formatting Baseline
 
