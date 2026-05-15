@@ -54,10 +54,10 @@ Manual GitHub setup after Phase 3 is merged.
 
 Suggested branch: `backend-cd-railway-visibility`
 
-- [ ] Decide whether Railway deployment status should appear in GitHub Actions.
-- [ ] Prefer a read-only deployment-status check if Railway supports it cleanly.
-- [ ] Avoid storing broad or long-lived credentials unless there is no better option.
-- [ ] Document any required GitHub variables/secrets before enabling the job.
+- [x] Decide whether Railway deployment status should appear in GitHub Actions.
+- [x] Prefer a read-only deployment-status check if Railway supports it cleanly.
+- [x] Avoid storing broad or long-lived credentials unless there is no better option.
+- [x] Document any required GitHub variables/secrets before enabling the job.
 
 ## Later
 
