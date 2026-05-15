@@ -25,6 +25,10 @@ app = FastAPI(title="Toon Ranks API")
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
+@app.get("/health", tags=["health"])
+async def health_check():
+    return {"status": "ok"}
+
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
