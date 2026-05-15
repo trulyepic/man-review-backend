@@ -9,6 +9,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
+Run the backend lint baseline:
+
+```bash
+ruff check .
+```
+
 ## Test Environment
 
 The test suite sets safe dummy values in `tests/conftest.py` before importing the FastAPI app. This keeps smoke tests from depending on production Railway, Postgres, S3, email, Google OAuth, or reCAPTCHA settings.

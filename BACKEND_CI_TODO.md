@@ -24,11 +24,11 @@ Suggested branch: `backend-ci-phase-1-health-baseline`
 
 Suggested branch: `backend-ci-phase-2-lint-format`
 
-- [ ] Add a Python linter/formatter setup, likely Ruff.
-- [ ] Keep the initial scope conservative: catch obvious syntax/import/style problems first.
-- [ ] Avoid large formatting churn unless the codebase is already close to compliant.
-- [ ] Add convenient local commands for linting.
-- [ ] Confirm lint passes locally.
+- [x] Add a Python linter/formatter setup, likely Ruff.
+- [x] Keep the initial scope conservative: catch obvious syntax/import/style problems first.
+- [x] Avoid large formatting churn unless the codebase is already close to compliant.
+- [x] Add convenient local commands for linting.
+- [x] Confirm lint passes locally.
 
 ## Phase 3: Backend GitHub Actions CI
 
@@ -65,4 +65,5 @@ Suggested branch: `backend-cd-railway-visibility`
 - [ ] Add database-backed integration tests using a disposable test database.
 - [ ] Add coverage reporting only after tests cover meaningful behavior.
 - [ ] Clean encoding/mojibake comments in touched files when doing nearby maintenance.
+- [ ] Consider a dedicated Ruff formatting branch; `ruff format --check .` currently reports broad churn.
 - [ ] Consider backend security scanning once the basic CI foundation is stable.
