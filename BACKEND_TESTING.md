@@ -36,6 +36,17 @@ pytest -m integration
 Never point `TEST_DATABASE_URL` at Railway, production, or any long-lived database. The integration
 test setup creates and drops tables in the target database.
 
+## CI Test Reports
+
+GitHub Actions writes pytest JUnit XML reports for the unit and integration test jobs, then uploads
+them as workflow artifacts:
+
+- `backend-unit-test-report`
+- `backend-integration-test-report`
+
+The local `test-results/` folder is ignored by git, so you can generate reports locally without
+accidentally committing them.
+
 ## Test Environment
 
 The test suite sets safe dummy values in `tests/conftest.py` before importing the FastAPI app. This keeps smoke tests from depending on production Railway, Postgres, S3, email, Google OAuth, or reCAPTCHA settings.
