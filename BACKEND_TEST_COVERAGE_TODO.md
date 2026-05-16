@@ -50,5 +50,5 @@ Suggested branch: `backend-tests-phase-5-db-integration`
 ## Later
 
 - [ ] Add coverage reporting once tests cover meaningful behavior.
-- [ ] Add JUnit pytest reports and upload them in GitHub Actions for clearer per-test failure summaries.
+- [x] Add JUnit pytest reports and upload them in GitHub Actions for clearer per-test failure summaries.
 - [ ] Add regression tests when production bugs are found.
