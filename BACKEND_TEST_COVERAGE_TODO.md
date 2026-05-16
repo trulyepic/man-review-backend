@@ -32,7 +32,7 @@ Suggested branch: `backend-tests-phase-3-auth-security`
 
 Suggested branch: `backend-tests-phase-4-route-mocks`
 
-- [ ] Add route tests for reading lists with mocked sessions.
+- [x] Add route tests for reading lists with mocked sessions.
 - [x] Add route tests for signup/login password behavior with mocked sessions.
 - [ ] Add route tests for issues with mocked sessions.
 - [ ] Add route tests for forum behavior with mocked sessions.
