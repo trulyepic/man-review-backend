@@ -38,14 +38,37 @@ test setup creates and drops tables in the target database.
 
 ## CI Test Reports
 
-GitHub Actions writes pytest JUnit XML reports for the unit and integration test jobs, then uploads
-them as workflow artifacts:
+GitHub Actions writes pytest JUnit XML and coverage XML reports for the unit and integration test
+jobs, then uploads them as workflow artifacts:
 
 - `backend-unit-test-report`
 - `backend-integration-test-report`
+- `backend-unit-coverage-report`
+- `backend-integration-coverage-report`
 
 The local `test-results/` folder is ignored by git, so you can generate reports locally without
 accidentally committing them.
+
+Generate a local unit coverage report:
+
+```bash
+pytest -m "not integration" --cov=app --cov-report=term-missing --cov-report=xml:test-results/coverage-unit.xml
+```
+
+## Regression Tests
+
+When a production bug is fixed, add a focused test that would fail without the fix. Mark it with
+`@pytest.mark.regression` and name it after the behavior being protected, not the ticket number.
+
+Good examples:
+
+- `test_login_rejects_unverified_user`
+- `test_upload_forum_image_rejects_large_dimensions_without_s3`
+- `test_sitemap_index_includes_series_sitemaps_after_route_rewrite`
+
+Regression tests should live next to the feature they protect unless the bug crosses multiple
+modules. Use [tests/regressions/README.md](tests/regressions/README.md) for cross-cutting bugs that
+need a dedicated home.
 
 ## Test Environment
 
