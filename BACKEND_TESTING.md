@@ -15,6 +15,27 @@ Run the backend lint baseline:
 ruff check .
 ```
 
+## Integration Tests
+
+Integration tests are marked with `@pytest.mark.integration` and require a disposable Postgres
+database through `TEST_DATABASE_URL`.
+
+Run only the normal mocked/unit test suite:
+
+```bash
+pytest -m "not integration"
+```
+
+Run integration tests locally only when you have a disposable test database ready:
+
+```bash
+set TEST_DATABASE_URL=postgresql+asyncpg://toonranks_test:toonranks_test@localhost:5432/toonranks_test
+pytest -m integration
+```
+
+Never point `TEST_DATABASE_URL` at Railway, production, or any long-lived database. The integration
+test setup creates and drops tables in the target database.
+
 ## Test Environment
 
 The test suite sets safe dummy values in `tests/conftest.py` before importing the FastAPI app. This keeps smoke tests from depending on production Railway, Postgres, S3, email, Google OAuth, or reCAPTCHA settings.

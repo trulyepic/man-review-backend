@@ -42,10 +42,10 @@ Suggested branch: `backend-tests-phase-4-route-mocks`
 
 Suggested branch: `backend-tests-phase-5-db-integration`
 
-- [ ] Decide on disposable Postgres strategy for CI.
-- [ ] Add test database setup/teardown.
+- [x] Decide on disposable Postgres strategy for CI.
+- [x] Add test database setup/teardown.
 - [ ] Add integration tests for core CRUD flows.
-- [ ] Keep production database credentials out of tests.
+- [x] Keep production database credentials out of tests.
 
 ## Later
 
