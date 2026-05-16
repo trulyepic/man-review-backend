@@ -35,7 +35,7 @@ Suggested branch: `backend-tests-phase-4-route-mocks`
 - [x] Add route tests for reading lists with mocked sessions.
 - [x] Add route tests for signup/login password behavior with mocked sessions.
 - [x] Add route tests for issues with mocked sessions.
-- [ ] Add route tests for forum behavior with mocked sessions.
+- [x] Add route tests for forum behavior with mocked sessions.
 - [ ] Add route tests for media validation without touching S3.
 
 ## Phase 5: Database Integration Tests
