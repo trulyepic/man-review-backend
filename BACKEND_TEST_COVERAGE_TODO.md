@@ -44,7 +44,7 @@ Suggested branch: `backend-tests-phase-5-db-integration`
 
 - [x] Decide on disposable Postgres strategy for CI.
 - [x] Add test database setup/teardown.
-- [ ] Add integration tests for core CRUD flows.
+- [x] Add integration tests for core CRUD flows.
 - [x] Keep production database credentials out of tests.
 
 ## Later
